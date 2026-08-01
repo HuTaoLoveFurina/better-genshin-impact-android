@@ -216,3 +216,23 @@ interval: 0.6               # 雲原神串流建議 0.8~1.0
 ## 免責聲明
 
 本專案僅用於技術學習與交流。腳本透過 ADB 模擬點擊操作，不修改遊戲檔案、不讀寫遊戲記憶體、不干預網路通訊。使用者需自行承擔因使用自動化工具而產生的一切後果，包含但不限於帳號風險。請遵守相關遊戲的使用者協議。
+
+## 致謝
+
+本專案的一切實現，都建立在 [**BetterGI · 更好的原神**](https://github.com/babalae/better-genshin-impact) 之上。
+
+- 感謝 [babalae](https://github.com/babalae) 與 BetterGI 的全體開發者、貢獻者。`AutoSkip` 模組中對劇情自動推進、選項辨識、播放態判定的整套設計思路，是本專案 Android 移植版的直接藍本。沒有他們多年累積的工程實踐與開源分享，就不會有這個專案。
+- 感謝 BetterGI 社群中提交 issue、貢獻模板資源、回饋邊界場景的每一位使用者。那些被反覆打磨過的細節，讓移植工作少走了大量彎路。
+- 感謝 BetterGI 堅持以 **GPL-3.0** 開源。正是這份開放，讓知識得以延續到新的平台。本專案同樣以 GPL-3.0 發佈，將這份開放繼續傳遞下去。
+
+向原專案的每一行程式碼與每一位開發者致敬。
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=HuTaoLoveFurina%2Fbetter-genshin-impact-android&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&theme=dark&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+ </picture>
+</a>

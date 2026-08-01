@@ -251,3 +251,31 @@ This project is for technical learning and communication only. The script operat
 simulated taps; it does not modify game files, read/write game memory, or interfere with network
 communication. Users bear all consequences of using automation tools, including but not limited
 to account risk. Please comply with the relevant game's Terms of Service.
+
+## Acknowledgements
+
+Everything in this project stands on the shoulders of
+[**BetterGI · Better Genshin Impact**](https://github.com/babalae/better-genshin-impact).
+
+- Thanks to [babalae](https://github.com/babalae) and every developer and contributor of BetterGI.
+  The entire design behind the `AutoSkip` module — automatic story advancement, option
+  recognition, playback-state detection — is the direct blueprint for this Android port. Without
+  their years of engineering practice and their willingness to share it openly, this project
+  would not exist.
+- Thanks to everyone in the BetterGI community who filed issues, contributed template assets, and
+  reported edge cases. Those hard-won details saved this port from countless detours.
+- Thanks to BetterGI for staying open source under **GPL-3.0**. That openness is what allowed the
+  knowledge to travel to a new platform. This project is released under GPL-3.0 as well, passing
+  that openness forward.
+
+A tribute to every line of code and every developer of the original project.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=HuTaoLoveFurina%2Fbetter-genshin-impact-android&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&theme=dark&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=HuTaoLoveFurina/better-genshin-impact-android&type=date&legend=top-left&sealed_token=PsfqI2ssPFXeokK1J0nVWKxzFeC7L0jkn1aBG6wKASZieIrXpIAYYjlx6Jlg-ISBs6Y5l5fy42HWD1q-pchInjMblwOz12D6fbw6q9dL06YWsUZYOOFxt_-leWNY1l8rPheUnBUOIyfqvxPHfbUIG1T_QzNd8vj1g1IktGO4DdjeJ1F0u_9XW2tm7383" />
+ </picture>
+</a>
