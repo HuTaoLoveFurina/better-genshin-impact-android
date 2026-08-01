@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+config.yaml
+debug/
+shot*.png
+*.png.bak
+
+.codebuddy/
+.idea/
+.vscode/

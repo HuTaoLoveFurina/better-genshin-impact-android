@@ -1,0 +1,57 @@
+# bgia 配置示例。复制为 config.yaml 后按需修改，运行时用 -c config.yaml 指定。
+
+# ---------------- 连接 ----------------
+# serial: "192.168.1.20:5555"   # 指定设备；多设备时必填，单设备可留空
+# wireless: "192.168.1.20:5555" # 填写后自动执行 adb connect
+adb_path: adb
+
+# 强制指定包名，留空则自动探测
+# 官服 com.miHoYo.Yuanshen / B服 com.miHoYo.ys.bilibili
+# 国际服 com.miHoYo.GenshinImpact / 云原神 com.miHoYo.cloudgames.ys
+# package: com.miHoYo.Yuanshen
+
+# ---------------- 循环 ----------------
+interval: 0.6        # 主循环间隔（秒），云原神串流建议调大到 0.8~1.0
+click_delay: 0.15    # 每次点击后的等待
+
+# ---------------- 剧情选项 ----------------
+choose_option: true
+option_mode: first   # first(第一个) / second(第二个) / last(最后一个) / random(随机) / none(不选)
+before_choose_delay: 0.0   # 点击选项前额外等待秒数，想听完语音可设 2~3
+
+# 自定义优先选项：文本包含其一即优先点击
+custom_priority: []
+#  - "继续深入"
+#  - "我准备好了"
+
+# 命中这些词时暂停自动点击，交由人工处理（防止误点消耗类选项）
+pause_keywords:
+  - 退出秘境
+  - 放弃
+  - 离开
+  - 购买
+  - 兑换
+  - 传送
+
+prefer_orange: true  # 橙色（关键剧情）选项优先
+
+# ---------------- 行为开关 ----------------
+quick_skip: true          # 播放中快速点击推进
+click_black_screen: true  # 黑屏演出期间点击
+auto_hangout_skip: true   # 邀约自动点跳过
+close_popup: true         # 自动关闭弹出页面
+click_continue: true       # 枫丹主线等「点击任意处继续」提示自动点击推进
+
+# ---------------- 阈值 ----------------
+template_threshold: 0.80  # 模板匹配阈值，误识别多就调高，识别不到就调低
+orange_ratio: 0.06
+
+# ---------------- 调试 ----------------
+debug: false
+debug_dir: debug
+
+# ---------------- 环境变量（无需改配置文件，运行时覆盖） ----------------
+# BGIA_OPTION_MODE   : 可设 first / second / last / random / none
+# BGIA_CHOOSE_OPTION : 可设 true / false （是否自动选选项）
+# 例： BGIA_OPTION_MODE=second python run.py
+
