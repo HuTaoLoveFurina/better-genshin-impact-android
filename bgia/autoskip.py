@@ -439,17 +439,20 @@ class AutoSkipTask:
                         )
                         contrast = max(before_brightness - band_brightness,
                                        after_brightness - band_brightness)
-                        # 暗带至少比一侧暗 12 个灰度值，且该行内有明显亮暗变化
-                        # （排除整行纯黑/纯暗的伪横条）
+                        # 暗带至少比一侧暗 12 个灰度值（区分选项横条与周围场景）。
+                        # 注意：不再用「列向方差」过滤纯色横条——
+                        # 原神选项横条背景是均匀半透明深色，短选项（如"是/否"）
+                        # 文字占比极小，整行列向方差可能 < 阈值，会被误杀成伪横条
+                        # 而漏掉真实对话选项。改为只排除「近乎纯黑」的伪横条：
+                        # 选项横条虽暗但非纯黑（带半透明与浅色描边），纯黑背景行
+                        # 才是需要剔除的噪声。
                         if contrast > 12:
-                            # 验证列向方差：选项横条内部有文字/图标，不应是纯色
-                            band_cols = blurred[ey:jy, :]
-                            if band_cols.size == 0:
+                            band_gray = blurred[ey:jy, :]
+                            if band_gray.size == 0:
                                 continue
-                            col_means = band_cols.mean(axis=0)
-                            col_std = float(col_means.std())
-                            if col_std < 4:
-                                continue  # 整行几乎纯色，极可能是背景而非选项
+                            band_mean = float(band_gray.mean())
+                            if band_mean < 8:
+                                continue  # 近乎纯黑，极可能是黑屏/背景而非选项
                             abs_y = scan_y_start + ey + band_h // 2
                             # 点击位：横条中心偏右（避开左侧图标/序号），
                             # 但若横条很窄（列表行）则取中心偏右 60%
