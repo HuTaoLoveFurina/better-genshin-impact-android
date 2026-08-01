@@ -1,5 +1,8 @@
 # bgia — 安卓端原神自动过剧情
 
+> 本项目为 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块移植版，遵循 **GPL-3.0** 开源许可证。
+> 版权所有 © 2025 HuTaoLoveFurina。详见 [LICENSE](./LICENSE)。
+
 基于 **ADB 视觉捕捉 + 模拟点击** 的原神自动剧情脚本，逻辑移植自 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块。
 
 无需 root、无需注入、不读写游戏内存，只做「截图 → 识别 → `input tap`」，与人手点击等价。
