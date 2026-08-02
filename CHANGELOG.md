@@ -26,11 +26,13 @@ UTC+8 offset and are precise to the minute.
 
 ---
 
-## [0.2.0] - 2026-08-02 18:48 +0800
+## [0.2.0] - 2026-08-02 18:51 +0800
 
 > Author: ChatGPT 5.6-sol (Codex CLI)
 >
 > Implementation: 2026-08-02 18:48 +0800 ([`2017b8b`][2017b8b])
+>
+> Mainline merge: 2026-08-02 18:51 +0800 ([`3637792`][3637792])
 
 ### Added
 
@@ -145,6 +147,7 @@ UTC+8 offset and are precise to the minute.
   ([`1733092`][1733092]).
 
 <!-- Commit links -->
+[3637792]: https://github.com/HuTaoLoveFurina/better-genshin-impact-android/commit/3637792f9dbc0c91ccecd973d1b534f7d8fbf857
 [2017b8b]: https://github.com/HuTaoLoveFurina/better-genshin-impact-android/commit/2017b8bbb4816b51cea0773a2a10af01d1657232
 [6a768b6]: https://github.com/HuTaoLoveFurina/better-genshin-impact-android/commit/6a768b66336a7523a0bd5f96da2b90746d256a30
 [a108f82]: https://github.com/HuTaoLoveFurina/better-genshin-impact-android/commit/a108f825d1fdaa3a51baef7649644173807bb57e
