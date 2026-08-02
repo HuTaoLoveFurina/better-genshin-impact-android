@@ -3,7 +3,7 @@
 > 本專案為 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模組移植版，遵循 **GPL-3.0** 開源授權。
 
 語言 / Language：
-[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md) · [日本語](./README/readme_ja.md) · [한국어](./README/readme_ko.md) · [Русский](./README/readme_ru.md)
+[简体中文](./README/readme_sc.md) · [English](./README.md) · [繁體中文](./README/readme_tc.md) · [日本語](./README/readme_ja.md) · [한국어](./README/readme_ko.md) · [Русский](./README/readme_ru.md)
 
 Telegram 交流群：[@bettergi_for_android](https://t.me/bettergi_for_android)
 
