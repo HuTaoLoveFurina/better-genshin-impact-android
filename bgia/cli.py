@@ -96,7 +96,7 @@ def connect(cfg: Config) -> AdbDevice:
 
     dev = AdbDevice(serial=cfg.serial, adb_path=cfg.adb_path)
     dev.wait_ready()
-    log.info("已连接设备: %s", dev.serial)
+    log.info("connected device: %s", dev.serial)
     return dev
 
 

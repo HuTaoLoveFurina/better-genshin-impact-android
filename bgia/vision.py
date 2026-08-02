@@ -190,12 +190,13 @@ def frame_diff_ratio(a: np.ndarray | None, b: np.ndarray | None, thresh: int = 1
 
 
 class OcrEngine:
-    """RapidOCR 封装，延迟初始化；不可用时降级为空结果。支持多语言。
+    """Lazy-initialized RapidOCR wrapper that degrades to empty results when unavailable.
 
-    同时兼容两代包：
-      - rapidocr >= 3.x        ：``from rapidocr import RapidOCR``，构造支持 ``lang=`` 多语言切换
-      - rapidocr-onnxruntime   ：旧包（仅支持 Python < 3.13），返回 (结果列表, 耗时) 元组，
-                                 无 lang= 参数，多语言不可用
+    Two package generations are supported transparently:
+      - ``rapidocr`` >= 3.x        : ``from rapidocr import RapidOCR``; the constructor accepts a
+        ``lang=`` argument for multilingual recognition.
+      - ``rapidocr-onnxruntime``   : the legacy package (Python < 3.13 only); it returns a
+        (results, elapsed) tuple and has no ``lang=`` parameter, so non-Chinese languages are unavailable.
     """
 
     def __init__(self, lang: str = "ch") -> None:
@@ -204,6 +205,7 @@ class OcrEngine:
         self._available: bool | None = None
 
     def _ensure(self) -> bool:
+        """Import and construct the OCR engine on first use; cache the availability result."""
         if self._available is not None:
             return self._available
 
@@ -211,7 +213,8 @@ class OcrEngine:
         for module, label in (("rapidocr", "rapidocr"), ("rapidocr_onnxruntime", "rapidocr-onnxruntime")):
             try:
                 mod = __import__(module, fromlist=["RapidOCR"])
-                # 多语言：rapidocr 3.x 支持 lang=；旧包无该参数则回退默认(中英文)模型
+                # rapidocr 3.x honors lang=; the legacy package raises TypeError, so fall back to the
+                # default (Chinese/English) model and warn when a non-Chinese language was requested.
                 try:
                     self._engine = mod.RapidOCR(lang=self._lang)
                 except TypeError:
@@ -239,11 +242,11 @@ class OcrEngine:
 
     @staticmethod
     def _normalize(raw) -> list[tuple]:
-        """把两代 API 的返回值统一为 [(box, text, score), ...]。"""
+        """Normalize both API generations into a list of ``(box, text, score)`` tuples."""
         if raw is None:
             return []
 
-        # rapidocr >= 2.x: RapidOCROutput(boxes=..., txts=..., scores=...)
+        # rapidocr >= 2.x: a RapidOCROutput dataclass exposing boxes / txts / scores.
         if hasattr(raw, "boxes"):
             boxes = getattr(raw, "boxes", None)
             if boxes is not None and len(boxes) > 0:
@@ -255,20 +258,22 @@ class OcrEngine:
                 ]
             return []
 
-        # 旧版: (结果列表, 耗时)
+        # Legacy package: a (results, elapsed) tuple. Unpack the first element and keep full rows.
         if isinstance(raw, tuple) and len(raw) == 2 and isinstance(raw[0], (list, type(None))):
             raw = raw[0] or []
         return [item for item in raw if item and len(item) >= 3]
 
     def recognize(self, img: np.ndarray, upscale: int | None = None) -> list[Match]:
-        """返回带文本与包围盒的结果，坐标相对传入图像。
+        """Run OCR and return text boxes (``Match`` objects) with coordinates relative to ``img``.
 
-        upscale: 放大倍数（针对小字号选项文本，提升识别率）。默认按图像高度自适应。
+        ``upscale``: integer upscaling factor for small option text. When omitted, the image is
+        upscaled adaptively so a single text line reaches ~64px tall (capped at 4x to avoid noise).
         """
         if img.size == 0 or not self._ensure():
             return []
-        # 自适应放大：选项文本行高度通常仅 20~50px，低于识别模型训练尺度时易漏读。
-        # 目标：单行高度 >= 64px；不超过 4 倍以免过度放大引入锯齿噪声。
+        # Option text lines are typically only 20~50px tall, below the OCR model's comfortable
+        # training scale, so they get missed. Upscale small images so a line is >= 64px; cap at 4x
+        # because further scaling only adds jaggies.
         if upscale:
             scale = float(upscale)
         else:
@@ -278,7 +283,7 @@ class OcrEngine:
         try:
             raw = self._engine(src)
         except Exception as exc:  # pragma: no cover
-            log.warning("OCR 识别异常: %s", exc)
+            log.warning("OCR recognition failed: %s", exc)
             return []
 
         result = self._normalize(raw)

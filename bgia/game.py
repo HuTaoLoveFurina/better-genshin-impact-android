@@ -103,11 +103,12 @@ top/bottom or left/right.
 
     if trim_black:
         bx, by, bw, bh = _trim_letterbox(frame)
-        # Only adopt when the black-border ratio is reasonable, to avoid mis-cropping on a fully black screen
+        # Only adopt the trimmed box when it keeps at least half the frame; a fully black screen would
+        # otherwise collapse the region to a tiny area and break downstream coordinate math.
         if bw >= fw * 0.5 and bh >= fh * 0.5:
             ox, oy, w, h = bx, by, bw, bh
 
-    # Converge the region to 16:9, centering and cropping the excess on the sides/top-bottom
+    # Fit the region to a 16:9 box: keep the center and drop the excess width (sides) or height (top/bottom)
     if w / h > ASPECT:
         new_w = int(round(h * ASPECT))
         ox += (w - new_w) // 2
