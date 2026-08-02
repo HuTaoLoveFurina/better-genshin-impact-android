@@ -3,7 +3,9 @@
 > 本项目为 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块移植版，遵循 **GPL-3.0** 开源许可证。
 
 语言 / Language：
-[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md)
+[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md) · [日本語](./README/readme_ja.md) · [한국어](./README/readme_ko.md) · [Русский](./README/readme_ru.md)
+
+Telegram 交流群：[@bettergi_for_android](https://t.me/bettergi_for_android)
 
 基于 **ADB 视觉捕捉 + 模拟点击** 的原神自动剧情脚本，逻辑移植自 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块。
 

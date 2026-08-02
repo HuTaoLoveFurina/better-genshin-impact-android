@@ -3,7 +3,9 @@
 > A port of the `AutoSkip` module from [BetterGI](https://github.com/babalae/better-genshin-impact), released under the **GPL-3.0** open-source license.
 
 Language / 語言：
-[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md)
+[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md) · [日本語](./README/readme_ja.md) · [한국어](./README/readme_ko.md) · [Русский](./README/readme_ru.md)
+
+Telegram group: [@bettergi_for_android](https://t.me/bettergi_for_android)
 
 An auto story-skipping script for Genshin Impact based on **ADB vision capture + simulated taps**, with logic ported from the `AutoSkip` module of [BetterGI](https://github.com/babalae/better-genshin-impact).
 
