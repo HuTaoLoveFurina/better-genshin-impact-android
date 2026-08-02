@@ -190,14 +190,16 @@ def frame_diff_ratio(a: np.ndarray | None, b: np.ndarray | None, thresh: int = 1
 
 
 class OcrEngine:
-    """RapidOCR 封装，延迟初始化；不可用时降级为空结果。
+    """RapidOCR 封装，延迟初始化；不可用时降级为空结果。支持多语言。
 
     同时兼容两代包：
-      - rapidocr >= 2.x        ：``from rapidocr import RapidOCR``，返回 RapidOCROutput 对象
-      - rapidocr-onnxruntime   ：旧包（仅支持 Python < 3.13），返回 (结果列表, 耗时) 元组
+      - rapidocr >= 3.x        ：``from rapidocr import RapidOCR``，构造支持 ``lang=`` 多语言切换
+      - rapidocr-onnxruntime   ：旧包（仅支持 Python < 3.13），返回 (结果列表, 耗时) 元组，
+                                 无 lang= 参数，多语言不可用
     """
 
-    def __init__(self) -> None:
+    def __init__(self, lang: str = "ch") -> None:
+        self._lang = lang
         self._engine = None
         self._available: bool | None = None
 
@@ -209,9 +211,19 @@ class OcrEngine:
         for module, label in (("rapidocr", "rapidocr"), ("rapidocr_onnxruntime", "rapidocr-onnxruntime")):
             try:
                 mod = __import__(module, fromlist=["RapidOCR"])
-                self._engine = mod.RapidOCR()
+                # 多语言：rapidocr 3.x 支持 lang=；旧包无该参数则回退默认(中英文)模型
+                try:
+                    self._engine = mod.RapidOCR(lang=self._lang)
+                except TypeError:
+                    if self._lang != "ch":
+                        log.warning(
+                            "当前 OCR 包(%s)不支持 lang= 多语言参数，已回退到默认中英文模型；"
+                            "升级到 rapidocr>=3.0 可启用 '%s' 语言识别。",
+                            label, self._lang,
+                        )
+                    self._engine = mod.RapidOCR()
                 self._available = True
-                log.info("OCR 引擎已加载: %s", label)
+                log.info("OCR 引擎已加载: %s (lang=%s)", label, self._lang)
                 return True
             except Exception as exc:  # pragma: no cover - 依赖缺失路径
                 last_err = exc
@@ -254,8 +266,13 @@ class OcrEngine:
         """
         if img.size == 0 or not self._ensure():
             return []
-        # 放大有助于小字号识别
-        scale = float(upscale) if upscale else (2.0 if img.shape[0] < 60 else 1.0)
+        # 自适应放大：选项文本行高度通常仅 20~50px，低于识别模型训练尺度时易漏读。
+        # 目标：单行高度 >= 64px；不超过 4 倍以免过度放大引入锯齿噪声。
+        if upscale:
+            scale = float(upscale)
+        else:
+            h = img.shape[0]
+            scale = max(1.0, min(4.0, 64.0 / h)) if h < 64 else 1.0
         src = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR) if scale != 1.0 else img
         try:
             raw = self._engine(src)

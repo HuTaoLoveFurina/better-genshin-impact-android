@@ -22,6 +22,7 @@ import numpy as np
 from .adb import AdbDevice
 from .config import Config
 from .game import GameWindow, resolve_window
+from .i18n import get_keywords
 from .vision import (
     Match,
     OcrEngine,
@@ -42,7 +43,9 @@ class AutoSkipTask:
     def __init__(self, device: AdbDevice, config: Config):
         self.device = device
         self.config = config
-        self.ocr = OcrEngine()
+        self.ocr = OcrEngine(lang=config.lang)
+        # 按语言加载剧情关键词（继续/播放中/选项/暂停）
+        self._kw = get_keywords(config.lang)
         self.window: GameWindow | None = None
 
         self._last_playing_at = 0.0
@@ -99,8 +102,13 @@ class AutoSkipTask:
         tx, ty = int(60 * s), int(25 * s)
         tw, th = int(180 * s), int(50 * s)
         crop = frame[ty : ty + th, tx : tx + tw]
+        playing_words = self._kw.get("playing", [])
         for r in self.ocr.recognize(crop):
-            if any(ch in r.text for ch in ("播", "放", "中", "番")):
+            txt = r.text
+            if not txt:
+                continue
+            # 命中任一「播放中」类词即视为播放态
+            if any(w and w in txt for w in playing_words):
                 return True
         return False
 
@@ -548,13 +556,13 @@ class AutoSkipTask:
         tw, th = int(w * 0.60), int(h * 0.20)
         crop = frame[ty : ty + th, tx : tx + tw]
         if crop.size:
+            cont_words = self._kw.get("continue_", [])
             for r in self.ocr.recognize(crop, upscale=3):
                 txt = r.text
                 if not txt:
                     continue
-                has_click = any(ch in txt for ch in ("点击", "轻触", "触摸", "点按"))
-                has_cont = "继续" in txt or "任意处" in txt or "屏幕" in txt
-                if (has_click and has_cont) or "任意处" in txt:
+                # 命中任一「继续/点击任意处」类词即视为「点击继续」提示
+                if any(w and w in txt for w in cont_words):
                     return True
 
         # --- 3) 纯像素兜底：底部中央箭头/倒三角指示符 ---

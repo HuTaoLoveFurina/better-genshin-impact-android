@@ -1,232 +1,276 @@
-# bgia — 安卓端原神自动过剧情
+# bgia — Genshin Impact Auto Story Skipper for Android
 
-> 本项目为 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块移植版，遵循 **GPL-3.0** 开源许可证。
+> A port of the `AutoSkip` module from [BetterGI](https://github.com/babalae/better-genshin-impact), released under the **GPL-3.0** open-source license.
 
-语言 / Language：
-[简体中文](./README.md) · [English](./README/readme_en.md) · [繁體中文](./README/readme_tc.md)
+Language / 語言：
+[简体中文](./README/readme_sc.md) · [English](./README.md) · [繁體中文](./README/readme_tc.md) · [日本語](./README/readme_ja.md) · [한국어](./README/readme_ko.md) · [Русский](./README/readme_ru.md)
 
-基于 **ADB 视觉捕捉 + 模拟点击** 的原神自动剧情脚本，逻辑移植自 [BetterGI](https://github.com/babalae/better-genshin-impact) 的 `AutoSkip` 模块。
+Telegram group: [@bettergi_for_android](https://t.me/bettergi_for_android)
 
-无需 root、无需注入、不读写游戏内存，只做「截图 → 识别 → `input tap`」，与人手点击等价。
+An auto story-skipping script for Genshin Impact based on **ADB vision capture + simulated taps**, with logic ported from the `AutoSkip` module of [BetterGI](https://github.com/babalae/better-genshin-impact).
 
-支持：原神**官服 / B服 / 各国际服**，以及**云原神**（国服与国际版）。
+No root, no injection, no game-memory access — it only does "screenshot → recognize → `input tap`", equivalent to a human tapping the screen.
 
-## 工作原理
+Supported: Genshin Impact **official / Bilibili / international servers**, as well as **cloud Genshin** (China and international).
+
+## How It Works
 
 ```
-adb screencap  ──►  16:9 渲染区裁剪  ──►  模板匹配 + OCR  ──►  决策  ──►  adb input tap
+adb screencap  ──►  16:9 render-region crop  ──►  template match + OCR  ──►  decide  ──►  adb input tap
 ```
 
-每帧按以下优先级处理（与 BetterGI 一致）：
+Each frame is processed by the following priority (consistent with BetterGI):
 
-| 顺序 | 场景 | 行为 |
+| # | Scene | Behavior |
 |---|---|---|
-| 1 | 邀约界面 | 点击「跳过」按钮 |
-| 2 | 对话选项 | 感叹号优先；否则 OCR 读取选项文本后按规则决策 |
-| 3 | 播放中 | 点击安全区快速推进对话 |
-| 4 | 黑屏演出 | 每秒点击一次推进 |
-| 5 | 弹出页面 | 点击右上角关闭 |
-| 6 | 点击任意处继续 | 枫丹主线等出现「点击任意处继续」提示时自动点击推进（见 `click_continue`） |
+| 1 | Hangout screen | Tap the "Skip" button |
+| 2 | Dialogue options | Exclamation mark first; otherwise OCR-read the option text and decide by rules |
+| 3 | Playing | Tap the safe zone to fast-forward dialogue |
+| 4 | Black-screen cutscene | Tap once per second to advance |
+| 5 | Pop-up page | Tap the top-right close button |
+| 6 | Tap-anywhere-to-continue | Auto-tap to advance when a "tap anywhere to continue" prompt appears (e.g. Fontaine main story, see `click_continue`) |
 
-选项决策为五级优先链：
-**自定义优先词 → 内置优先词 → 敏感词（暂停）→ 橙色关键选项 → 兜底策略（首个/末个/随机）**
+Option decision is a five-level priority chain:
+**custom priority words → built-in priority words → sensitive words (pause) → orange key options → fallback strategy (first/last/random)**
 
-## 安装
+## Installation
 
 ```bash
-# 1. 安装 Android Platform Tools（提供 adb）
+# 1. Install Android Platform Tools (provides adb)
 sudo apt install android-tools-adb        # Debian/Ubuntu/Kali
 # macOS: brew install android-platform-tools
 
-# 2. 创建虚拟环境并安装依赖
+# 2. Create a virtual environment and install dependencies
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-> **Kali / Debian 12+ 用户注意**：这些系统启用了 PEP 668 保护，直接 `pip install`
-> 会报 `externally-managed-environment`。**必须用上面的虚拟环境方式**，不要加
-> `--break-system-packages`（会污染系统 Python，可能破坏 apt 工具链）。
-> 若提示缺少 venv 模块，先执行 `sudo apt install python3-full python3-venv`。
+> **Kali / Debian 12+ users**: these systems enable PEP 668 protection; a direct `pip install`
+> raises `externally-managed-environment`. **You must use the virtualenv approach above**;
+> do not add `--break-system-packages` (it pollutes system Python and may break apt).
+> If venv is missing, first run `sudo apt install python3-full python3-venv`.
 
-之后所有命令都用 `.venv/bin/python` 执行；或先 `source .venv/bin/activate`
-激活环境（激活后可直接用 `python`），用 `deactivate` 退出。
+After that, run all commands with `.venv/bin/python`; or `source .venv/bin/activate` first
+(then `python` works directly), and `deactivate` to exit.
 
-## 跨平台运行
+## Cross-Platform
 
-本项目同时支持 **Linux / macOS / Windows** 三端，以及 **已 root 的安卓设备本地运行**（无需 PC）。
+This project supports **Linux / macOS / Windows**, and **rooted Android devices running locally** (no PC needed).
 
 ### Windows
 
-1. 安装 Python 3.10+（勾选「Add to PATH」）。
-2. 下载 [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools)，
-   把含 `adb.exe` 的目录加入系统 `PATH`；或把 `adb.exe` 放到本项目根目录 / `platform-tools/` 下
-   （脚本会自动查找）。
-3. 用 `bgia.bat` 管理（菜单同 `bgia.sh`）：
+1. Install Python 3.10+ (check "Add to PATH").
+2. Download [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools),
+   add the directory containing `adb.exe` to the system `PATH`; or place `adb.exe` in the
+   project root / `platform-tools/` (the script auto-discovers it).
+3. Use `bgia.bat` (same menu as `bgia.sh`):
    ```bat
    bgia.bat
    ```
-   或直接命令行：
+   Or directly from the command line:
    ```bat
    .venv\Scripts\python.exe -m bgia.cli run
    ```
 
-### 已 root 的安卓设备（本地 shell 模式）
+### Rooted Android device (local shell mode)
 
-在手机上的 **Termux（已 root）/ Magisk 终端** 中直接运行，截图与点击走
-`/system/bin/screencap` 与 `/system/bin/input`，**无需 PC、无需 adb 转发**。
+Run directly in **Termux (rooted) / Magisk terminal** on the phone; screenshots and taps go
+through `/system/bin/screencap` and `/system/bin/input` — **no PC, no adb forwarding**.
 
-1. 在 Termux 中安装 Python 与依赖（Termux 自带 `clang`/`libc++`）：
+1. Install Python and dependencies in Termux (Termux ships `clang`/`libc++`):
    ```bash
    pkg update && pkg install python clang libc++ make
    python -m venv .venv && .venv/bin/pip install -r requirements.txt
    ```
-2. 用 root 权限启动（否则 `screencap` / `input` 无法访问屏幕）：
+2. Launch with root (otherwise `screencap` / `input` cannot access the screen):
    ```bash
-   # Termux 中先获取 root（需 Magisk 等）
    su
-   cd /data/data/com.termux/files/home/bgia   # 你的项目路径
+   cd /data/data/com.termux/files/home/bgia   # your project path
    .venv/bin/python -m bgia.cli run --local
    ```
-3. 环境变量同样可用：`BGIA_OPTION_MODE=second .venv/bin/python -m bgia.cli run --local`
+3. Environment variables work the same: `BGIA_OPTION_MODE=second .venv/bin/python -m bgia.cli run --local`
 
-> 本地模式会自动跳过 adb 连接，直接调用系统 `screencap -p` 截图、`input tap` 点击。
-> 若提示截图不可用，请确认已 `su` 提权且 `/system/bin/screencap` 存在。
+> Local mode skips adb connection and calls system `screencap -p` / `input tap` directly.
+> If screenshots fail, confirm you ran `su` and `/system/bin/screencap` exists.
 
-## 连接手机
+## Connect Your Phone
 
-**有线：** 手机开启「开发者选项 → USB 调试」，插上数据线后在手机上点「允许」。
+**USB:** Enable "Developer options → USB debugging", plug in, and tap "Allow" on the phone.
 
-**无线（Android 11+）：** 开启「开发者选项 → 无线调试」，用配对码配对：
+**Wireless (Android 11+):** Enable "Developer options → Wireless debugging" and pair with the code:
 
 ```bash
-adb pair 192.168.1.20:37xxx      # 输入手机上显示的配对码
+adb pair 192.168.1.20:37xxx      # enter the pairing code shown on the phone
 adb connect 192.168.1.20:5555
 ```
 
-**无线（Android 10 及以下）：** 需先用数据线执行一次 `adb tcpip 5555`，再 `adb connect <IP>:5555`。
+**Wireless (Android 10 and below):** first run `adb tcpip 5555` over USB once, then `adb connect <IP>:5555`.
 
-验证连接：
+Verify the connection:
 
 ```bash
 python -m bgia.cli devices
 ```
 
-## 准备模板资源
+## Prepare Template Assets
 
-脚本依赖少量 UI 模板图。因原著模板不随本仓库分发，需从**你自己的手机实机截图**采集一次（也能顺带适配不同服的 UI 差异）。
+The script relies on a few UI template images. Because the original templates are not
+distributed with this repo, capture them once from **your own device screenshots** (this also
+adapts to UI differences across servers).
 
-进入游戏任意对话场景，然后：
+Enter any dialogue scene in-game, then:
 
 ```bash
-# 抓一张当前画面
-.venv/bin/python tools/grab_template.py shot        # 生成 shot.png
+# Grab a frame
+.venv/bin/python tools/grab_template.py shot        # produces shot.png
 
-# 交互式框选并保存（需 GUI，且要装 opencv-python 而非 headless）
+# Interactively select a region and save (needs GUI + opencv-python, not headless)
 .venv/bin/python tools/grab_template.py pick --name icon_option.png
 
-# 或者用看图软件量出像素框后直接裁剪（无需 GUI，推荐）
+# Or measure pixel rect with an image viewer then crop directly (no GUI, recommended)
 .venv/bin/python tools/grab_template.py crop --rect 1150,470,36,36 --name icon_option.png
 ```
 
-工具会自动把裁剪结果**归一化到 1920×1080 基准**再存入 `assets/1920x1080/`，因此换手机、换分辨率都无需重新采集。
+The tool auto-normalizes crops to the **1920×1080 baseline** before saving into
+`assets/1920x1080/`, so switching phones or resolutions needs no re-capture.
 
-必需模板（缺失时对应功能自动降级，不会崩溃）：
+Required templates (missing ones auto-degrade gracefully, no crash):
 
-| 文件名 | 内容 | 缺失影响 |
+| File | Content | Impact if missing |
 |---|---|---|
-| `icon_option.png` | 对话选项左侧的气泡图标 | 无法定位选项，退化为播放推进 |
-| `icon_exclamation.png` | 任务关键选项的感叹号图标 | 失去感叹号优先 |
-| `stop_auto.png` | 左上角「自动播放」按钮 | 改由 OCR 兜底判断播放态 |
-| `hangout_skip.png` | 邀约界面的跳过按钮 | 邀约不自动跳过 |
-| `page_close.png` | 弹窗右上角关闭按钮 | 不自动关弹窗 |
-| `icon_click_continue.png` | 「点击任意处继续」底部倒三角/箭头指示符 | 退化为纯像素形态检测（见下方「全凭截图模式」） |
+| `icon_option.png` | Bubble icon on the left of dialogue options | Cannot locate options; degrades to play-advance |
+| `icon_exclamation.png` | Exclamation icon for key quest options | Loses exclamation priority |
+| `stop_auto.png` | Top-left "Auto Play" button | Falls back to OCR for play-state |
+| `hangout_skip.png` | Skip button on hangout screens | Hangouts not auto-skipped |
+| `page_close.png` | Top-right close button for pop-ups | Pop-ups not auto-closed |
+| `icon_click_continue.png` | Bottom "tap-anywhere-to-continue" triangle/arrow | Degrades to pure-pixel shape detection (see "Screenshot-Only Mode" below) |
 
-## 使用
+## Usage
 
 ```bash
-# 自检：确认分辨率、包名、渲染区、模板、OCR 是否就绪
+# Self-check: resolution, package, render region, templates, OCR
 .venv/bin/python -m bgia.cli check
 
-# 启动
+# Run
 .venv/bin/python -m bgia.cli run
 
-# 常用组合
-.venv/bin/python -m bgia.cli run -c config.yaml          # 使用配置文件
-.venv/bin/python -m bgia.cli run -w 192.168.1.20:5555    # 无线连接并启动
-.venv/bin/python -m bgia.cli run -m last                 # 优先选最后一个选项
-.venv/bin/python -m bgia.cli run --debug -v              # 调试截图 + 详细日志
+# Common combos
+.venv/bin/python -m bgia.cli run -c config.yaml          # use config file
+.venv/bin/python -m bgia.cli run -w 192.168.1.20:5555    # wireless connect + run
+.venv/bin/python -m bgia.cli run -m last                 # prefer last option
+.venv/bin/python -m bgia.cli run --debug -v              # debug screenshots + verbose log
 ```
 
-`Ctrl+C` 停止。
+`Ctrl+C` to stop.
 
-## 配置
+## Configuration
 
-复制 `config.example.yaml` 为 `config.yaml` 后修改，关键项：
+Copy `config.example.yaml` to `config.yaml` and edit. Key items:
 
 ```yaml
-option_mode: first          # 选项策略 first/last/random/none
-before_choose_delay: 0.0    # 想听完语音就设 2~3 秒
-custom_priority:            # 自定义优先选项
+option_mode: first          # option strategy first/last/random/none
+before_choose_delay: 0.0    # set 2~3s if you want to hear the voice lines
+custom_priority:            # custom priority options
   - "继续深入"
-pause_keywords:             # 命中即暂停，防止误点消耗类选项
+pause_keywords:             # pause on hit to avoid mis-clicking consumable options
   - 退出秘境
   - 购买
-interval: 0.6               # 云原神串流建议 0.8~1.0
+interval: 0.6               # cloud Genshin streaming: suggest 0.8~1.0
 ```
 
-## 各版本说明
+## Server Notes
 
-| 版本 | 包名 |
+| Server | Package |
 |---|---|
-| 官服 | `com.miHoYo.Yuanshen` |
-| B服 | `com.miHoYo.ys.bilibili` |
-| 国际服 | `com.miHoYo.GenshinImpact` |
-| 云原神（国服） | `com.miHoYo.cloudgames.ys` |
-| 云·原神（国际） | `com.miHoYo.cloudgames.genshinimpact` |
+| Official | `com.miHoYo.Yuanshen` |
+| Bilibili | `com.miHoYo.ys.bilibili` |
+| International | `com.miHoYo.GenshinImpact` |
+| Cloud (China) | `com.miHoYo.cloudgames.ys` |
+| Cloud (Intl) | `com.miHoYo.cloudgames.genshinimpact` |
 
-包名自动探测，也可用 `-p` 强制指定。
+Package auto-detected, or force with `-p`.
 
-**云原神注意：** 画面是视频串流，存在编码模糊与网络延迟，建议调大 `interval` 至 `0.8~1.0`，并适当降低 `template_threshold` 到 `0.72~0.75`。串流黑边由脚本自动裁除。
+**Cloud Genshin note:** the picture is video streaming with encode blur and network latency.
+Raise `interval` to `0.8~1.0` and lower `template_threshold` to `0.72~0.75`. Streaming
+letterbox is auto-cropped.
 
-**全面屏适配：** 20:9 等非 16:9 屏幕上，游戏画面居中且两侧为安全区，脚本会自动定位真实的 16:9 渲染区，所有坐标基于该区域换算，无需手动配置。
+**Notch/Full-screen adaptation:** On 20:9 etc. non-16:9 screens the game is centered with side
+safe areas; the script auto-locates the true 16:9 render region and maps all coordinates to it,
+no manual config needed.
 
-**跨分辨率 / DPI / 缩放自适应：** 脚本对不同手机的奇葩设置完全自动适应，无需任何手动配置：
-- **分辨率差异**：所有模板、ROI 均在运行时按「实际渲染区宽 ÷ 1920」动态缩放，1920×1080 基准模板对 720p / 1080p / 2K 屏通用；渲染区由每帧实拍自动检测（去黑边 + 16:9 收敛），不依赖写死的分辨率。
-- **DPI / 缩放倍速（`wm density`、`wm size` Override）**：`screencap` 返回的是真实显示分辨率（物理像素），而 `input tap` 使用的是 `wm size` 的逻辑像素。当两者因 DPI 缩放而不一致时，脚本会缓存「截图尺寸 ÷ 显示尺寸」的比例，在每次点击前自动换算坐标，彻底消除系统性偏移。
-- 因此更换手机、修改显示缩放、切换游戏内分辨率，都不需要重新采集模板或改任何配置。
+**Cross-resolution / DPI / scale adaptation:** the script auto-adapts to any phone quirks,
+no manual config:
+- **Resolution:** all templates/ROIs scale at runtime by "render width ÷ 1920"; 1920×1080
+  baseline templates work for 720p/1080p/2K; the render region is auto-detected per frame
+  (black-edge trim + 16:9 convergence), not hardcoded.
+- **DPI / scale (`wm density`, `wm size` Override):** `screencap` returns real display
+  resolution (physical pixels) while `input tap` uses `wm size` logical pixels. When they
+  differ due to DPI scaling, the script caches the "screenshot size ÷ display size" ratio and
+  converts tap coordinates automatically, eliminating systematic offset.
+- Thus switching phones, changing display scale, or switching in-game resolution needs no
+  template re-capture or config change.
 
-## 常见问题
+## FAQ
 
-**识别不到选项** — 先跑 `check` 确认模板就绪；再把 `template_threshold` 调低到 `0.72`；仍不行则用 `--debug` 导出 `debug/` 下的截图核对模板是否与实机 UI 一致（不同服 UI 略有差异，重新采集即可）。
+**Options not recognized** — Run `check` to confirm templates are ready; lower
+`template_threshold` to `0.72`; if still failing, export screenshots under `debug/` with
+`--debug` and verify templates match your device UI (different servers differ slightly;
+re-capture).
 
-**点击位置偏移** — 说明渲染区识别有误，跑 `check` 查看渲染区数值是否与实际画面吻合；确保游戏处于横屏且在前台。若改过系统显示缩放（`wm size` / `wm density`），脚本会自动按物理/逻辑分辨率比例换算点击坐标，无需手动干预；如仍偏移，先执行 `adb shell wm size reset` 与 `adb shell wm density reset` 还原系统缩放再试。
+**Tap position offset** — Render-region detection is wrong; run `check` and verify the
+render-region numbers match the actual screen; ensure the game is landscape and in foreground.
+If you changed system display scale (`wm size` / `wm density`), the script auto-converts by
+physical/logical ratio; if still off, run `adb shell wm size reset` and `adb shell wm density
+reset` to restore scale.
 
-**截图很慢** — 部分设备 `screencap` 较慢，脚本已优先使用原始像素管道（比 PNG 模式快）。可适当调大 `interval`。
+**Screenshots are slow** — Some devices have slow `screencap`; the script already prefers the
+raw pixel pipeline (faster than PNG). Raise `interval` a bit.
 
-**OCR 不可用** — 执行 `.venv/bin/pip install rapidocr onnxruntime`。未安装时脚本仍可运行，选项会退化为按位置点击。
+**OCR unavailable** — Run `.venv/bin/pip install rapidocr onnxruntime`. The script still runs
+without it; options degrade to position-based taps.
 
-**全凭截图模式（纯像素兜底）** — 即使模板未采集、OCR 未安装，脚本仍能通过**纯像素分析**识别选项与推进提示：
-- **选项检测**：在画面中扫描「比周围更暗的圆角横条」（所有原神选项 UI 的共同视觉特征），自动点击最上方的一项逐个推进。适用于普通对话气泡、齿轮图标选项、案件记录册列表等所有特殊 UI。
-- **点击任意处继续**：检测底部中央的倒三角/箭头指示符轮廓（纯形态检测，无需模板）。
-- 此模式是模板/OCR 缺失时的最终兜底，确保在任何环境下都不会因资源缺失而卡死。
+**Screenshot-Only Mode (pure-pixel fallback)** — Even with templates uncollected or OCR
+uninstalled, the script recognizes options and advance prompts via pure-pixel analysis:
+- **Option detection:** scans the screen for "rounded dark bars darker than surroundings"
+  (the common visual trait of all Genshin option UIs) and auto-taps the topmost one to advance
+  item by item. Works for normal bubbles, gear-icon options, case-record lists, etc.
+- **Tap-anywhere-to-continue:** detects the bottom-center triangle/arrow shape (pure shape
+  detection, no template needed).
+- This is the final fallback when templates/OCR are missing, guaranteeing no deadlock in any
+  environment.
 
-**pip 报 `externally-managed-environment`** — Kali/Debian 12+ 的 PEP 668 保护，按上面「安装」一节用虚拟环境即可。注意 `python3-xyz` 只是报错文案里的占位示例名，并非真实软件包。
+**pip `externally-managed-environment`** — PEP 668 on Kali/Debian 12+; use the virtualenv from
+the Installation section. Note `python3-xyz` in the error is just a placeholder name, not a real
+package.
 
-**`rapidocr-onnxruntime` 装不上** — 该旧包限制 Python `<3.13`。Python 3.13+ 请用 `rapidocr>=2.0`（已写入 requirements.txt），代码对两代包都兼容。首次运行会自动下载约 20MB 的 ONNX 模型。
+**`rapidocr-onnxruntime` won't install** — That old package requires Python `<3.13`. On
+Python 3.13+ use `rapidocr>=2.0` (already in requirements.txt); the code is compatible with both
+generations. The first run auto-downloads ~20MB of ONNX models.
 
-## 免责声明
+## Disclaimer
 
-本项目仅用于技术学习与交流。脚本通过 ADB 模拟点击操作，不修改游戏文件、不读写游戏内存、不干预网络通信。使用者需自行承担因使用自动化工具而产生的一切后果，包括但不限于账号风险。请遵守相关游戏的用户协议。
+This project is for technical learning and communication only. The script operates via ADB
+simulated taps; it does not modify game files, read/write game memory, or interfere with network
+communication. Users bear all consequences of using automation tools, including but not limited
+to account risk. Please comply with the relevant game's Terms of Service.
 
-## 致谢
+## Acknowledgements
 
-本项目的一切实现，都建立在 [**BetterGI · 更好的原神**](https://github.com/babalae/better-genshin-impact) 之上。
+Everything in this project stands on the shoulders of
+[**BetterGI · Better Genshin Impact**](https://github.com/babalae/better-genshin-impact).
 
-- 感谢 [babalae](https://github.com/babalae) 与 BetterGI 的全体开发者、贡献者。`AutoSkip` 模块中对剧情自动推进、选项识别、播放态判定的整套设计思路，是本项目安卓移植版的直接蓝本。没有他们多年积累的工程实践与开源分享，就不会有这个项目。
-- 感谢 BetterGI 社区中提交 issue、贡献模板资源、反馈边界场景的每一位使用者。那些被反复打磨过的细节，让移植工作少走了大量弯路。
-- 感谢 BetterGI 坚持以 **GPL-3.0** 开源。正是这份开放，让知识得以延续到新的平台。本项目同样以 GPL-3.0 发布，将这份开放继续传递下去。
+- Thanks to [babalae](https://github.com/babalae) and every developer and contributor of BetterGI.
+  The entire design behind the `AutoSkip` module — automatic story advancement, option
+  recognition, playback-state detection — is the direct blueprint for this Android port. Without
+  their years of engineering practice and their willingness to share it openly, this project
+  would not exist.
+- Thanks to everyone in the BetterGI community who filed issues, contributed template assets, and
+  reported edge cases. Those hard-won details saved this port from countless detours.
+- Thanks to BetterGI for staying open source under **GPL-3.0**. That openness is what allowed the
+  knowledge to travel to a new platform. This project is released under GPL-3.0 as well, passing
+  that openness forward.
 
-向原项目的每一行代码与每一位开发者致敬。
+A tribute to every line of code and every developer of the original project.
 
 ## Star History
 
