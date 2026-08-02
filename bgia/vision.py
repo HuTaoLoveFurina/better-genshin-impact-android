@@ -80,6 +80,7 @@ def match_template(
     threshold: float = 0.8,
     roi: tuple[int, int, int, int] | None = None,
     mode: int = cv2.TM_CCOEFF_NORMED,
+    grayscale: bool = False,
 ) -> Match | None:
     """Find a template in frame and return the best match (coordinates relative to the frame origin)."""
     tpl = _scaled_template(name, int(round(scale * 1000)))
@@ -102,6 +103,9 @@ def match_template(
     if target.shape[0] < th or target.shape[1] < tw:
         return None
 
+    if grayscale:
+        target = cv2.cvtColor(target, cv2.COLOR_BGR2GRAY) if target.ndim == 3 else target
+        tpl = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY) if tpl.ndim == 3 else tpl
     res = cv2.matchTemplate(target, tpl, mode)
     _, max_val, _, max_loc = cv2.minMaxLoc(res)
     if max_val < threshold:
@@ -116,6 +120,7 @@ def match_template_multi(
     threshold: float = 0.8,
     roi: tuple[int, int, int, int] | None = None,
     max_count: int = 10,
+    grayscale: bool = False,
 ) -> list[Match]:
     """Multi-target template matching with NMS deduplication."""
     tpl = _scaled_template(name, int(round(scale * 1000)))
@@ -138,6 +143,9 @@ def match_template_multi(
     if target.shape[0] < th or target.shape[1] < tw:
         return []
 
+    if grayscale:
+        target = cv2.cvtColor(target, cv2.COLOR_BGR2GRAY) if target.ndim == 3 else target
+        tpl = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY) if tpl.ndim == 3 else tpl
     res = cv2.matchTemplate(target, tpl, cv2.TM_CCOEFF_NORMED)
     ys, xs = np.where(res >= threshold)
     cands = sorted(
@@ -193,8 +201,9 @@ class OcrEngine:
     """Lazy-initialized RapidOCR wrapper that degrades to empty results when unavailable.
 
     Two package generations are supported transparently:
-      - ``rapidocr`` >= 3.x        : ``from rapidocr import RapidOCR``; the constructor accepts a
-        ``lang=`` argument for multilingual recognition.
+      - ``rapidocr`` >= 3.x        : ``from rapidocr import RapidOCR``; recognition is pinned to
+        the multilingual PP-OCRv4 mobile model because the default PP-OCRv6 model does not accept
+        the ``latin``, ``cyrillic``, or ``korean`` model codes used by this project.
       - ``rapidocr-onnxruntime``   : the legacy package (Python < 3.13 only); it returns a
         (results, elapsed) tuple and has no ``lang=`` parameter, so non-Chinese languages are unavailable.
     """
@@ -209,33 +218,43 @@ class OcrEngine:
         if self._available is not None:
             return self._available
 
-        last_err: Exception | None = None
+        errors: list[tuple[str, Exception]] = []
         for module, label in (("rapidocr", "rapidocr"), ("rapidocr_onnxruntime", "rapidocr-onnxruntime")):
             try:
                 mod = __import__(module, fromlist=["RapidOCR"])
-                # rapidocr 3.x honors lang=; the legacy package raises TypeError, so fall back to the
-                # default (Chinese/English) model and warn when a non-Chinese language was requested.
-                try:
-                    self._engine = mod.RapidOCR(lang=self._lang)
-                except TypeError:
-                    if self._lang != "ch":
+                if module == "rapidocr":
+                    if hasattr(mod, "OCRVersion") and hasattr(mod, "ModelType"):
+                        # RapidOCR 3.x requires enum values for model selectors. PP-OCRv4 mobile
+                        # provides every recognition family mapped in bgia.i18n.
+                        params = {
+                            "Rec.ocr_version": mod.OCRVersion.PPOCRV4,
+                            "Rec.model_type": mod.ModelType.MOBILE,
+                            "Rec.lang_type": self._lang,
+                        }
+                        self._engine = mod.RapidOCR(params=params)
+                    else:
+                        # Some intermediate releases exposed the language as a direct keyword.
+                        self._engine = mod.RapidOCR(lang=self._lang)
+                else:
+                    # rapidocr-onnxruntime has no language selector and uses its bundled model.
+                    if self._lang not in {"ch", "en"}:
                         log.warning(
-                            "the installed OCR package (%s) does not support the lang= argument; "
-                            "falling back to the default Chinese/English model. "
-                            "Upgrade to rapidocr>=3.0 to enable '%s' recognition.",
-                            label, self._lang,
+                            "%s does not support language model selection; '%s' may be inaccurate",
+                            label,
+                            self._lang,
                         )
                     self._engine = mod.RapidOCR()
                 self._available = True
                 log.info("OCR engine loaded: %s (lang=%s)", label, self._lang)
                 return True
             except Exception as exc:  # pragma: no cover - missing-dependency path
-                last_err = exc
+                errors.append((label, exc))
 
+        details = "; ".join(f"{label}: {type(exc).__name__}: {exc}" for label, exc in errors)
         log.error(
-            "failed to load the OCR engine; option-text recognition falls back to positional tapping: %s\n"
+            "failed to load the OCR engine; OCR-dependent features are unavailable: %s\n"
             "  install with: pip install rapidocr onnxruntime",
-            last_err,
+            details or "no compatible OCR provider was found",
         )
         self._available = False
         return False
