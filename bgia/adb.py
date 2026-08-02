@@ -107,7 +107,8 @@ When ``local=True``, all commands run directly on the local (rooted Android) she
         self.screencap_timeout = screencap_timeout
         self._use_raw_screencap = not local  # local mode uses PNG only
         self._display: DisplayInfo | None = None
-        # Physical pixel size of the most recent screenshot (physical pixels; raw screencap returns real display resolution)
+        # Physical size (in real device pixels) of the most recent screenshot; used to map
+        # screenshot coordinates to logical input coordinates when DPI/size overrides are in effect.
         self._frame_w: int | None = None
         self._frame_h: int | None = None
 
@@ -243,7 +244,8 @@ In local mode, args are the local commands to execute (e.g. "screencap", "-p").
     def screencap(self) -> np.ndarray:
         """Capture the current screen and return a BGR ndarray.
 
-Also caches the screenshot's physical size for DPI/scale-adaptive coordinate conversion in tap/swipe.
+        Also caches the screenshot's physical size so tap/swipe can convert coordinates to the
+        device's logical resolution (DPI/scale adaptive).
         """
         if self.local:
             # Local mode: `screencap -p` writes PNG directly to stdout
@@ -282,20 +284,24 @@ systematically. This compensates automatically using the cached frame and displa
         return x, y
 
     def _screencap_raw(self) -> np.ndarray:
-        """When called without args, screencap outputs raw pixels with a header of w/h/format(/colorspace)."""
+        """Capture raw pixels via ``screencap`` (no PNG re-encoding) for lower latency.
+
+        The raw stream starts with a 12-byte header (width, height, format as little-endian u32).
+        On Android 9+ a 4-byte colorspace field is appended, making the header 16 bytes. So we try
+        both header sizes and pick the one whose payload length matches ``w*h*4`` (raw is always RGBA_8888).
+        """
         data = self.run("exec-out", "screencap", timeout=self.screencap_timeout, binary=True)
         if len(data) < 16:
             raise AdbError("screencap returned data too short")
 
         w, h, fmt = np.frombuffer(data[:12], dtype="<u4")
-        # Android 9+ has an extra 4-byte colorspace field in the header
+        expected = int(w) * int(h) * 4
+        # Prefer the 16-byte header (Android 9+); fall back to 12 bytes for older devices.
         for header in (16, 12):
-            expected = int(w) * int(h) * 4
             if len(data) - header == expected:
                 buf = np.frombuffer(data[header : header + expected], dtype=np.uint8)
                 img = buf.reshape(int(h), int(w), 4)
-                if int(fmt) == 1:  # RGBA_8888
-                    return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+                # raw screencap is always RGBA_8888; convert to BGR for OpenCV
                 return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
         raise AdbError(f"screencap size mismatch: w={w} h={h} len={len(data)}")
 

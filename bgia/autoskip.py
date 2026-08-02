@@ -35,7 +35,7 @@ from .vision import (
 
 log = logging.getLogger(__name__)
 
-# 播放标识消失后的宽限期（秒），与 BetterGI 保持一致
+# Grace period (seconds) after the playing indicator disappears before we treat playback as stopped; kept in line with BetterGI.
 PLAYING_FLAG_GRACE = 10.0
 
 
@@ -44,7 +44,7 @@ class AutoSkipTask:
         self.device = device
         self.config = config
         self.ocr = OcrEngine(lang=config.lang)
-        # 按语言加载剧情关键词（继续/播放中/选项/暂停）
+        # Load the story keywords for the configured language (continue / playing / option / pause).
         self._kw = get_keywords(config.lang)
         self.window: GameWindow | None = None
 
@@ -55,7 +55,7 @@ class AutoSkipTask:
         self._paused_reason: str | None = None
         self._frame_index = 0
 
-    # ------------------------------------------------------------- 工具
+    # ------------------------------------------------------------- utilities
 
     def _scale(self) -> float:
         assert self.window is not None
@@ -87,7 +87,7 @@ class AutoSkipTask:
         ts = datetime.now().strftime("%H%M%S_%f")[:-3]
         cv2.imwrite(str(d / f"{ts}_{tag}.png"), frame)
 
-    # ------------------------------------------------------------- 状态判定
+    # ------------------------------------------------------------- state detection
 
     def _is_playing(self, frame: np.ndarray) -> bool:
         """Detect the auto-play marker at the top-left (stop_auto button / "playing" text)."""
@@ -97,7 +97,7 @@ class AutoSkipTask:
         if self._find(frame, "stop_auto.png", roi=roi):
             return True
 
-        # OCR 兜底：左上角 “自动播放中/播放中”
+        # OCR fallback: look for "auto-playing / playing" text in the top-left corner.
         s = self._scale()
         tx, ty = int(60 * s), int(25 * s)
         tw, th = int(180 * s), int(50 * s)
@@ -107,12 +107,12 @@ class AutoSkipTask:
             txt = r.text
             if not txt:
                 continue
-            # 命中任一「播放中」类词即视为播放态
+            # Hitting any "playing"-class keyword marks the playback state.
             if any(w and w in txt for w in playing_words):
                 return True
         return False
 
-    # ------------------------------------------------------------- 邀约
+    # ------------------------------------------------------------- hangout
 
     def _handle_hangout(self, frame: np.ndarray) -> bool:
         if not self.config.auto_hangout_skip:
@@ -125,15 +125,17 @@ class AutoSkipTask:
             return True
         return False
 
-    # ------------------------------------------------------------- 选项
+    # ------------------------------------------------------------- options
 
     def _option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
-        """Option search region: covers most of the lower-middle of the screen (left case-book/investigation panel + right dialogue bubbles).
+        """Option search region covering most of the lower-middle of the screen.
 
-The original only scanned the right half (normal dialogue bubbles) and could not cover left-side multi-option list UIs such as the Fontaine case-book. Extending to the full-width lower-middle region supports both layouts.
+        The region spans the full width (left case-book / investigation panel + right dialogue bubbles).
+        An earlier version only scanned the right half and missed left-side multi-option list UIs such as
+        the Fontaine case-book; the full-width lower-middle region supports both layouts.
         """
         h, w = frame.shape[:2]
-        # 左右各留边距避开 UI 装饰元素，上下留边避开顶部标题栏/底部按钮
+        # Margins on every side avoid UI decorations (left/right) and the top title bar / bottom buttons.
         return (int(w * 0.08), int(h * 0.12), int(w * 0.84), int(h * 0.82))
 
     def _handle_options(self, frame: np.ndarray) -> bool:
@@ -142,7 +144,7 @@ The original only scanned the right half (normal dialogue bubbles) and could not
 
         roi = self._option_roi(frame)
 
-        # 感叹号（任务关键选项）最优先
+        # Exclamation mark = a mission-critical option; always take it first.
         excl = self._find(frame, "icon_exclamation.png", roi=roi)
         if excl:
             log.info("exclamation option found -> tap")
@@ -150,12 +152,14 @@ The original only scanned the right half (normal dialogue bubbles) and could not
             self._last_option_click = time.time()
             return True
 
-        # --- OCR 优先策略 ---
-        # 始终尝试对选项 ROI 做 OCR，按 y 聚类提取候选选项。
-        # 图标模板匹配仅作为辅助信号（用于日志/置信度加权），不再作为硬性门槛。
+        # --- OCR-first strategy ---
+        # Always OCR the option ROI and cluster results by y to extract candidate options.
+        # Icon template matching is now only an auxiliary signal (logging / confidence weighting),
+        # not a hard gate.
         texts = self._read_options(frame, roi)
 
-        # 用图标匹配数辅助判断是否真的在选项界面（至少 1 个图标命中时更可信）
+        # Use the icon match count to gauge whether we are really on an option screen
+        # (>=1 icon hit makes it more trustworthy).
         bubbles = match_template_multi(
             frame, "icon_option.png", self._scale(), self.config.template_threshold, roi
         )
@@ -164,7 +168,7 @@ The original only scanned the right half (normal dialogue bubbles) and could not
             log.debug("option-icon match count: %d", icon_count)
 
         if not texts:
-            # OCR 无结果但有图标 → 退化为按图标位置点击
+            # No OCR text but icons present -> fall back to tapping by icon position.
             if icon_count > 0:
                 bubbles.sort(key=lambda m: m.y)
                 target = bubbles[0] if self.config.option_mode != "last" else bubbles[-1]
@@ -173,9 +177,9 @@ The original only scanned the right half (normal dialogue bubbles) and could not
                 self._last_option_click = time.time()
                 return True
 
-            # --- 兜底：特殊 UI 选项（齿轮/案件记录册等无标准图标的选项界面）---
-            # 当 OCR 不可用且无任何图标匹配时，
-            # 如果画面中下部存在深色圆角横条（选项气泡背景特征），尝试点击推进
+            # --- Fallback: special option UIs (gear / case-book) without a standard icon ---
+            # When OCR is unavailable and no icon matches, try clicking a dark rounded bubble in the
+            # lower-middle area (the typical option-background feature) to advance.
             if self._guess_option_bubble(frame):
                 return True
 
@@ -206,12 +210,13 @@ Filtering strategy:
         if crop.size == 0:
             return []
 
-        # 放大 3 倍提升小字号选项/截断文本的识别率（默认 2 倍在小字上易漏读）
+        # Upscale 3x to improve recognition of small / clipped option text (the default 2x still
+        # misses small fonts).
         results = self.ocr.recognize(crop, upscale=3)
         if not results:
             return []
 
-        # 按文本块中心 y 聚类：相邻（间隔 < 行高阈值）归为同一选项
+        # Cluster text blocks by their center-y: blocks within `line_gap` belong to the same option.
         items = []
         for r in results:
             cx = float(r.x + r.width / 2) + x0
@@ -228,9 +233,11 @@ Filtering strategy:
                 groups.append([(cx, cy, text, score, rx, ry, rw, rh)])
 
         out: list[Match] = []
-        # NPC 对话过滤阈值：
-        #   - ROI 底部 25% 且 x 紧贴左边缘（< ROI宽*8%）→ 视为底部 NPC 对话/名字
-        #   - 案件记录册等左侧选项列表虽然也靠左，但通常在中上区域且不紧贴最左边缘
+        # NPC-dialogue filtering thresholds:
+        #   - bottom 25% of the ROI AND x hugging the left edge (< 8% of ROI width) -> bottom NPC
+        #     dialogue / name
+        #   - left-side option lists (e.g. case-book) are also left-aligned but sit in the upper-middle
+        #     and do not hug the very left edge
         npc_y_threshold = y0 + h * 0.75
         npc_x_threshold = w * 0.08
 
@@ -240,18 +247,18 @@ Filtering strategy:
             texts_ = " ".join(t[2] for t in g).strip()
             if not texts_:
                 continue
-            gx = min(t[4] for t in g)  # 组内最左 x (相对 crop)
-            gy = min(t[5] for t in g)  # 组内最上 y (相对 crop)
+            gx = min(t[4] for t in g)  # leftmost x in the group (relative to crop)
+            gy = min(t[5] for t in g)  # topmost y in the group (relative to crop)
 
-            # --- NPC 对话/名字过滤 ---
+            # --- NPC dialogue / name filter ---
             avg_cy = sum(ys) / len(ys)
-            abs_gy = gy + y0  # 绝对 y 坐标 (相对 frame)
+            abs_gy = gy + y0  # absolute y (relative to frame)
             is_npc_like = (
-                abs_gy > npc_y_threshold   # 在底部区域
-                and gx < npc_x_threshold    # 靠左对齐（NPC 名字/对话从左边开始）
-                and len(texts_) > 8         # 文本较长（对话比选项文字长）
+                abs_gy > npc_y_threshold   # in the bottom region
+                and gx < npc_x_threshold    # left-aligned (NPC names/dialogue start at the left)
+                and len(texts_) > 8         # longer text (dialogue is longer than option text)
             )
-            # 单字/极短文本通常不是有效选项（可能是碎片或 NPC 名单字）
+            # Single characters / very short text are usually not valid options (debris or a 1-char NPC name)
             is_trivial = len(texts_) <= 2
             if is_npc_like or is_trivial:
                 log.debug("filtered non-option text: %r (y=%.0f, x=%.0f, len=%d, npc=%s trivial=%s)",
@@ -262,7 +269,7 @@ Filtering strategy:
             y = int(min(ys))
             cx = int(sum(xs) / len(xs))
             cy_int = int(sum(ys) / len(ys))
-            # 用选项组对应原图区域判断橙色（关键剧情选项文字偏橙黄）
+            # Detect the orange tint on the option's source pixels (key-story options are tinted orange-yellow).
             sub = frame[max(0, y - 8): y + 40, max(0, x - 8): x + 400]
             orange = is_orange_option(sub)
             out.append(
@@ -278,21 +285,21 @@ Filtering strategy:
 
     def _decide_option(self, options: list[Match]) -> tuple[int, Match] | None:
         """Decide which option to click, following BetterGI's priority rules."""
-        # 1. 自定义优先选项
+        # 1. Custom priority words (user-defined).
         for i, o in enumerate(options):
             for kw in self.config.custom_priority:
                 if kw and kw in o.text:
                     log.debug("matched custom priority word '%s'", kw)
                     return i, o
 
-        # 2. 内置优先词
+        # 2. Built-in priority words.
         for i, o in enumerate(options):
             for kw in self.config.select_keywords:
                 if kw and kw in o.text:
                     log.debug("matched built-in priority word '%s'", kw)
                     return i, o
 
-        # 3. 危险词 -> 暂停，交给人工
+        # 3. Sensitive words -> pause and hand control to the user.
         for o in options:
             for kw in self.config.pause_keywords:
                 if kw and kw in o.text:
@@ -302,14 +309,14 @@ Filtering strategy:
                     return None
         self._paused_reason = None
 
-        # 4. 橙色关键剧情选项
+        # 4. Orange key-story options.
         if self.config.prefer_orange:
             for i, o in enumerate(options):
                 if o.score > 0:
                     log.debug("matched orange option")
                     return i, o
 
-        # 5. 兜底策略
+        # 5. Fallback strategy.
         mode = self.config.option_mode
         if mode == "none":
             log.info("option mode=none; skip auto-selection, leave to manual control")
@@ -320,13 +327,13 @@ Filtering strategy:
             i = random.randrange(len(options))
             return i, options[i]
         if mode == "second":
-            # 第 2 个选项；不足 2 个时降级选第一个，保证总能点
+            # The 2nd option; fall back to the 1st when fewer than 2 exist, so we always click something.
             i = 1 if len(options) > 1 else 0
             return i, options[i]
-        # first（默认）
+        # first (default)
         return 0, options[0]
 
-    # ------------------------------------------------------------- 推进/黑屏/弹窗
+    # ------------------------------------------------------------- advance / black-screen / popup
 
     def _handle_playing(self, frame: np.ndarray) -> bool:
         """While playing: tap a safe area of the screen to advance dialogue (avoiding the top-left button and right-side option area)."""
@@ -362,7 +369,7 @@ Filtering strategy:
             return True
         return False
 
-    # ------------------------------------------------------------- 点击任意处继续（枫丹主线等）
+    # ------------------------------------------------------------- click anywhere to continue (Fontaine main story, etc.)
 
     def _find_option_bands(self, frame: np.ndarray) -> list[tuple[int, int, int]]:
         """Pure-pixel "option dark-band" detection: no templates or OCR.
@@ -382,7 +389,8 @@ An empty list means no recognizable option dark band on the current screen.
         roi = self._option_roi(frame)
         x0, y0, rw, rh = roi
 
-        # 扫描整个 ROI（已避开顶部标题栏/底部按钮），不再只扫中下 60%
+        # Scan the entire ROI (the top title bar / bottom buttons are already excluded by the ROI margins)
+        # instead of only the lower-middle 60%.
         scan_y_start = y0
         scan_y_end = y0 + rh
         scan_x_start = x0
@@ -395,26 +403,27 @@ An empty list means no recognizable option dark band on the current screen.
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         ch, cw = crop.shape[:2]
 
-        # 高斯模糊降噪，避免单个噪点行被误判为边界
+        # Gaussian blur to suppress single noisy rows being mistaken for band edges.
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        # 每行的平均亮度
+        # Mean brightness of each row.
         row_means = blurred.mean(axis=1)
 
-        # 逐列也做同理论证，但选项横条在水平方向几乎满宽，
-        # 用行均值已足够；这里额外用「列向方差」过滤掉伪横条。
-        # （伪横条：整行都暗的纯背景，其列方差很小；真正的选项气泡
-        #  中间文字/图标区域比两侧亮，列方差较大。）
+        # Option bands span nearly the full width, so the per-row mean already captures their edges well;
+        # a per-column variance filter is intentionally NOT used: Genshin's option bands are uniformly
+        # semi-transparent dark, and short options (e.g. "yes/no") have almost no bright text/icon area,
+        # so their column variance can fall below threshold and get wrongly dropped as a fake band.
 
-        # 行间一阶差分（垂直梯度 proxy）：找亮度突变行（气泡边界）
+        # First-order difference between adjacent rows (a vertical-gradient proxy) to locate brightness jumps
+        # (the band's top/bottom edges).
         row_diff = np.abs(np.diff(row_means))
 
-        # 局部自适应阈值：使用 diff 的均值 + 0.8std 作为边界判定门槛
+        # Locally adaptive threshold: mean diff + 0.8*std marks an edge.
         diff_mean = row_diff.mean()
         diff_std = row_diff.std()
         edge_threshold = diff_mean + diff_std * 0.8
 
-        # 找显著的"上边界+下边界"对
+        # Find notable "top-edge + bottom-edge" pairs.
         edges: list[tuple[int, str]] = []
         for i in range(1, len(row_diff)):
             if row_diff[i] > edge_threshold:
@@ -423,9 +432,9 @@ An empty list means no recognizable option dark band on the current screen.
                 elif i + 1 < len(row_means) and row_means[i + 1] > row_means[i - 1]:
                     edges.append((i, "bottom"))
 
-        # 匹配 top-bottom 对，筛选高度 35~120px 的暗带
-        # （放宽上限到 120 兼容案件记录册等较大的列表行/分区标题；
-        #  下限 35 过滤掉选项面板标题行、分隔线等矮横条噪声）
+        # Match each top edge with the next bottom edge, keeping dark bands 35~120px tall.
+        # (upper cap 120 covers larger case-book list rows / section titles; lower cap 35 drops the
+        # short bars of option-panel headers / dividers.)
         bands: list[tuple[int, int, int]] = []
         for idx in range(len(edges)):
             ey, etype = edges[idx]
@@ -447,28 +456,29 @@ An empty list means no recognizable option dark band on the current screen.
                         )
                         contrast = max(before_brightness - band_brightness,
                                        after_brightness - band_brightness)
-                        # 暗带至少比一侧暗 12 个灰度值（区分选项横条与周围场景）。
-                        # 注意：不再用「列向方差」过滤纯色横条——
-                        # 原神选项横条背景是均匀半透明深色，短选项（如"是/否"）
-                        # 文字占比极小，整行列向方差可能 < 阈值，会被误杀成伪横条
-                        # 而漏掉真实对话选项。改为只排除「近乎纯黑」的伪横条：
-                        # 选项横条虽暗但非纯黑（带半透明与浅色描边），纯黑背景行
-                        # 才是需要剔除的噪声。
+                        # A band must be at least 12 gray levels darker than one side (to separate option
+                        # bars from the surrounding scene). Note: we no longer use a column-variance filter
+                        # for solid-color bars -- Genshin option bands are uniformly semi-transparent dark,
+                        # and short options (e.g. "yes/no") have almost no text, so their column variance
+                        # can fall below threshold and get wrongly dropped as a fake band, missing real
+                        # dialogue options. Instead we only exclude near-pure-black bands: option bands are
+                        # dark but not pure black (semi-transparent with a light stroke), whereas pure-black
+                        # rows are the noise to drop.
                         if contrast > 12:
                             band_gray = blurred[ey:jy, :]
                             if band_gray.size == 0:
                                 continue
                             band_mean = float(band_gray.mean())
                             if band_mean < 8:
-                                continue  # 近乎纯黑，极可能是黑屏/背景而非选项
+                                continue  # near pure black -> most likely a black screen / background, not an option
                             abs_y = scan_y_start + ey + band_h // 2
-                            # 点击位：横条中心偏右（避开左侧图标/序号），
-                            # 但若横条很窄（列表行）则取中心偏右 60%
+                            # Tap point: center-right of the band (avoiding the left icon/index); for narrow
+                            # list rows the 60% point still lands on the readable area.
                             abs_x = scan_x_start + int(cw * 0.6)
                             bands.append((abs_y, abs_x, band_h))
                     break
 
-        # 按 y 排序，去重（间隔 < 15px 视为同一暗带）
+        # Sort by y and de-duplicate (bands < 15px apart are the same band).
         bands.sort(key=lambda b: b[0])
         dedup: list[tuple[int, int, int]] = []
         for b in bands:
@@ -486,7 +496,7 @@ topmost option band to advance the story. Multi-option lists advance one item pe
         bands = self._find_option_bands(frame)
         if not bands:
             return False
-        # 每次只点最靠上的那一项，下一帧再处理下一项（兼容列表/多选项）
+        # Tap only the topmost item this frame; the next frame handles the next one (supports multi-option lists).
         abs_y, abs_x, band_h = bands[0]
         log.info("pure-pixel detected %d option band(s); tap topmost @y=%d, height=%dpx",
                  len(bands), abs_y, band_h)
@@ -503,7 +513,7 @@ This is the visual signature of the "tap anywhere to continue" prompt, distinct 
 dialogue-option screen.
         """
         h, w = frame.shape[:2]
-        # 底部中央约 1/2 宽、1/6 高的区域
+        # Bottom-center region, about half the width and one-sixth the height.
         rx, ry = int(w * 0.25), int(h * (1 - 1 / 6))
         rw, rh = int(w * 0.5), int(h / 6)
         if rw <= 0 or rh <= 0:
@@ -513,7 +523,7 @@ dialogue-option screen.
             return False
 
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        # 指示符通常是白色/浅灰，远高于背景暗度
+        # The indicator is usually white / light gray, far brighter than the dark background.
         _, binarized = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(binarized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for c in contours:
@@ -521,13 +531,13 @@ dialogue-option screen.
             if area < 80 or area > 6000:
                 continue
             x, y, cw, ch = cv2.boundingRect(c)
-            # 指示符偏小且接近方形/三角，宽高比不会极端
+            # The indicator is small and near square/triangle, so its aspect ratio is not extreme.
             if cw <= 0 or ch <= 0:
                 continue
             aspect = max(cw, ch) / min(cw, ch)
             if aspect > 4:
                 continue
-            # 质心应落在 ROI 水平中心附近（倒三角居中显示）
+            # Its centroid should sit near the ROI's horizontal center (the inverted triangle is centered).
             cx = x + cw / 2
             if abs(cx - rw / 2) > rw * 0.25:
                 continue
@@ -545,14 +555,14 @@ The 3rd rule keeps advancement working even when the template is missing or OCR 
 the "no option dark band" joint check avoids false triggers on normal dialogue/option screens."""
         h, w = frame.shape[:2]
 
-        # --- 1) 底部倒三角/箭头模板（如有采集）---
+        # --- 1) Bottom inverted-triangle / arrow template (if captured) ---
         arrow = self._find(frame, "icon_click_continue.png",
                            roi=(w // 4, h - h // 6, w // 2, h // 6))
         if arrow:
             return True
 
-        # --- 2) OCR 兜底：底部区域命中「点击 ... 继续」字样 ---
-        # （无 OCR 时 recognize 返回空，自动跳过本条）
+        # --- 2) OCR fallback: hit a "tap ... to continue" phrase in the bottom area ---
+        # (when OCR is unavailable, recognize() returns empty and this branch is skipped)
         tx, ty = int(w * 0.20), int(h * 0.78)
         tw, th = int(w * 0.60), int(h * 0.20)
         crop = frame[ty : ty + th, tx : tx + tw]
@@ -562,12 +572,12 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
                 txt = r.text
                 if not txt:
                     continue
-                # 命中任一「继续/点击任意处」类词即视为「点击继续」提示
+                # Hitting any "continue / tap anywhere" class word counts as the prompt.
                 if any(w and w in txt for w in cont_words):
                     return True
 
-        # --- 3) 纯像素兜底：底部中央箭头/倒三角指示符 ---
-        #     但画面存在选项暗带时跳过（避免普通对话界面误判）
+        # --- 3) Pure-pixel fallback: bottom-center arrow / inverted-triangle indicator ---
+        #     skipped when option dark bands are present (to avoid false triggers on normal dialogue screens)
         if self._has_continue_indicator(frame):
             bands = self._find_option_bands(frame)
             return len(bands) == 0
@@ -584,12 +594,12 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
         self._tap_in_window(w * 0.5, h * 0.6)
         return True
 
-    # ------------------------------------------------------------- 主循环
+    # ------------------------------------------------------------- main loop
 
     def tick(self) -> None:
         frame_full = self.device.screencap()
 
-        # 首帧或分辨率变化时重新定位窗口
+        # Re-localize the window on the first frame or when the resolution may have changed.
         if self.window is None:
             self.window = resolve_window(self.device, frame_full, self.config.package)
 
@@ -627,11 +637,11 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
         if in_grace and self._handle_popup(frame):
             return
 
-        # 点击任意处继续（枫丹主线等特殊提示），优先级低于选项/弹窗
+        # "Tap anywhere to continue" (e.g. Fontaine main story) -- lower priority than options / popups.
         if self._handle_click_continue(frame):
             return
 
-        # 画面长时间静止且不在播放态，说明剧情已结束，静默等待
+        # The screen is idle and not playing -> the story has ended; just stand by silently.
         if not in_grace:
             diff = frame_diff_ratio(self._last_frame, frame)
             if diff < 0.01:
@@ -652,7 +662,7 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
             except Exception as exc:
                 errors += 1
                 log.error("loop exception (accumulated %d, ignored): %s", errors, exc)
-                # 不自动退出：持续重试，避免运行过久后程序终止
+                # Do not auto-exit: keep retrying so a long run is not killed by a transient error.
                 time.sleep(min(1.0 + errors * 0.5, 10.0))
 
             elapsed = time.time() - start

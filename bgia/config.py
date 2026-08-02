@@ -48,7 +48,7 @@ class Config:
     custom_priority: list[str] = field(default_factory=list)
     select_keywords: list[str] = field(default_factory=lambda: list(DEFAULT_SELECT_KEYWORDS))
     pause_keywords: list[str] = field(default_factory=lambda: list(DEFAULT_PAUSE_KEYWORDS))
-    prefer_orange: bool = False      # prefer orange (key-story) options; color detection is unreliable under streaming, off by default
+    prefer_orange: bool = False      # prefer orange (key-story) options; the orange tint is hard to detect reliably when the image is re-encoded by screen mirroring/streaming, so this is off by default
 
     # Behavior switches
     quick_skip: bool = True          # rapid tap to advance dialogue
