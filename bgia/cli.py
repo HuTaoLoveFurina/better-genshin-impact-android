@@ -41,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["first", "second", "last", "random", "none"],
         help="选项策略",
     )
+    p.add_argument(
+        "-L", "--lang",
+        help="游戏语言（覆盖配置 lang），如 zh-CN/en/ja/ko/ru/fr/de/es/pt/it/tr/id/vi/th/zh-TW",
+    )
     p.add_argument("--debug", action="store_true", help="开启调试截图")
     p.add_argument("-v", "--verbose", action="store_true", help="详细日志")
 
@@ -51,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def merge_args(cfg: Config, args: argparse.Namespace) -> Config:
-    for key in ("serial", "wireless", "package", "interval", "option_mode", "local"):
+    for key in ("serial", "wireless", "package", "interval", "option_mode", "local", "lang"):
         val = getattr(args, key, None)
         if val is not None:
             setattr(cfg, key, val)
@@ -151,7 +155,7 @@ def cmd_check(cfg: Config) -> int:
     else:
         print("模板资源   : 就绪")
 
-    print("OCR 引擎   : " + ("就绪" if OcrEngine()._ensure() else "不可用（选项文本识别将降级）"))
+    print("OCR 引擎   : " + ("就绪" if OcrEngine(lang=cfg.lang)._ensure() else "不可用（选项文本识别将降级）"))
     return 0
 
 

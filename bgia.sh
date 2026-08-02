@@ -4,7 +4,7 @@
 #
 # 功能菜单:
 #   1) 启动程序   2) 重启程序   3) 关闭程序
-#   4) 查看日志   5) 自动配置环境   6) 自动采集图标
+#   4) 查看日志   5) 自动配置环境   6) 自动采集图标   0) 退出
 #
 # 用法:  bash bgia.sh    或    chmod +x bgia.sh && ./bgia.sh
 #
@@ -39,6 +39,86 @@ is_running() {
 
 get_pid() { [ -f "$PID_FILE" ] && cat "$PID_FILE" 2>/dev/null || echo; }
 
+# 当前选中的游戏语言（由 choose_lang 设置）
+SEL_LANG="zh-CN"
+
+# ---------- 预热/下载指定语言的 OCR 模型 ----------
+ensure_ocr() {
+  local gl="$1"
+  if [ ! -x "$VENV_PY" ] && [ ! -f "$VENV_PY" ]; then
+    warn "虚拟环境未就绪，跳过 OCR 语言包预热（请先执行菜单 5 配置环境）。"
+    return 0
+  fi
+  info "正在预热/下载 OCR 语言包 ($gl) ..."
+  if "$VENV_PY" tools/ensure_ocr.py "$gl"; then
+    ok "OCR 语言包就绪: $gl"
+  else
+    warn "OCR 语言包预热失败，运行时将尝试自动下载（需联网）。"
+  fi
+}
+
+# ---------- 语言选择 ----------
+choose_lang() {
+  while true; do
+    hr
+    echo "${BLD}请选择游戏语言${RST}"
+    echo "  1) 英语 (English)        — 之后将让你选择 OCR 识别语言"
+    echo "  2) 中文 (简体)           — 自动安装中文 OCR 包"
+    echo "  3) 日语 (Japanese)       — 自动安装日语 OCR 包"
+    echo "  4) 韩语 (Korean)         — 自动安装韩语 OCR 包"
+    echo "  5) 俄语 (Russian)        — 自动安装俄语 OCR 包"
+    hr
+    read -r -p "${BLD}请输入 [1-5]: ${RST}" lc
+    case "$lc" in
+      2)
+        SEL_LANG="zh-CN"; ensure_ocr "$SEL_LANG"; return ;;
+      3)
+        SEL_LANG="ja";    ensure_ocr "$SEL_LANG"; return ;;
+      4)
+        SEL_LANG="ko";    ensure_ocr "$SEL_LANG"; return ;;
+      5)
+        SEL_LANG="ru";    ensure_ocr "$SEL_LANG"; return ;;
+      1)
+        choose_ocr_lang ;;
+      *)
+        warn "无效输入，请输入 1-5。" ;;
+    esac
+  done
+}
+
+# 英语：二级选择 OCR 要识别的语言
+choose_ocr_lang() {
+  while true; do
+    hr
+    echo "${BLD}英语客户端：请选择 OCR 要识别的语言${RST}"
+    echo "  1) 英语   2) 简体中文   3) 繁体中文   4) 日语   5) 韩语   6) 俄语"
+    echo "  7) 法语   8) 德语   9) 西班牙语   10) 葡萄牙语  11) 意大利语  12) 土耳其语"
+    echo "  13) 印尼语 14) 越南语  15) 泰语(不可靠)"
+    hr
+    read -r -p "${BLD}请输入 [1-15]: ${RST}" oc
+    case "$oc" in
+      1)  SEL_LANG="en" ;;
+      2)  SEL_LANG="zh-CN" ;;
+      3)  SEL_LANG="zh-TW" ;;
+      4)  SEL_LANG="ja" ;;
+      5)  SEL_LANG="ko" ;;
+      6)  SEL_LANG="ru" ;;
+      7)  SEL_LANG="fr" ;;
+      8)  SEL_LANG="de" ;;
+      9)  SEL_LANG="es" ;;
+      10) SEL_LANG="pt" ;;
+      11) SEL_LANG="it" ;;
+      12) SEL_LANG="tr" ;;
+      13) SEL_LANG="id" ;;
+      14) SEL_LANG="vi" ;;
+      15) SEL_LANG="th" ;;
+      *)  warn "无效输入，请输入 1-15。"; continue ;;
+    esac
+    ensure_ocr "$SEL_LANG"
+    return
+  done
+}
+
 # ---------- 1. 启动 ----------
 do_start() {
   if is_running; then
@@ -49,9 +129,9 @@ do_start() {
     err "未找到虚拟环境，请先执行菜单 5 配置环境。"
     return 1
   fi
-  info "正在后台启动 bgia ..."
+  info "正在后台启动 bgia (语言=$SEL_LANG) ..."
   # 用 nohup 后台运行，stdout/stderr 同时写入日志
-  nohup "$VENV_PY" -m bgia.cli run >"$LOG_FILE" 2>&1 &
+  nohup "$VENV_PY" -m bgia.cli run --lang "$SEL_LANG" >"$LOG_FILE" 2>&1 &
   local pid=$!
   echo "$pid" > "$PID_FILE"
   sleep 2
@@ -216,7 +296,7 @@ do_grab() {
 # ---------- 菜单 ----------
 show_menu() {
   hr
-  echo "${BLD}bgia 管理菜单${RST}"
+  echo "${BLD}bgia 管理菜单${RST}   (当前语言: ${YEL}$SEL_LANG${RST})"
   echo "  1) 启动程序"
   echo "  2) 重启程序"
   echo "  3) 关闭程序"
@@ -224,7 +304,6 @@ show_menu() {
   echo "  5) 自动配置环境"
   echo "  6) 自动采集图标"
   echo "  0) 退出"
-  echo "  q) 退出"
   hr
   if is_running; then
     echo "当前状态: ${GRN}运行中 (PID=$(get_pid))${RST}"
@@ -237,7 +316,7 @@ menu_loop() {
   local choice
   while true; do
     show_menu
-    read -r -p "${BLD}请选择 [1-6/q]: ${RST}" choice
+    read -r -p "${BLD}请选择 [0-6]: ${RST}" choice
     case "$choice" in
       1) do_start ;;
       2) do_restart ;;
@@ -245,9 +324,8 @@ menu_loop() {
       4) do_logs ;;
       5) do_setup ;;
       6) do_grab ;;
-      q|Q) echo "再见。"; exit 0 ;;
       0)  echo "再见。"; exit 0 ;;
-      *) warn "无效输入，请输入 1-6、0 或 q。" ;;
+      *) warn "无效输入，请输入 0-6。" ;;
     esac
     echo
     read -r -p "${BLD}按回车返回菜单...${RST}" _ || true
@@ -257,4 +335,6 @@ menu_loop() {
 # 捕获 Ctrl+C，干净退出
 trap 'echo; echo "已退出。"; exit 0' INT
 
+# 启动前先选择语言，再进入主菜单
+choose_lang
 menu_loop
