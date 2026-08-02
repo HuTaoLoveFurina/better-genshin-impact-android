@@ -202,28 +202,78 @@ do_setup() {
   info "开始自动配置项目环境"
   hr
 
-  # 5.1 系统包：adb + python3-venv
+  # 5.1 系统包：adb + python3-venv（跨发行版）
   info "[1/4] 检查系统依赖 (adb / python3-venv) ..."
-  need_apt=0
+  need_pkg=0
   if ! command -v adb >/dev/null 2>&1; then
-    warn "未检测到 adb，需安装 android-tools-adb"
-    need_apt=1
+    warn "未检测到 adb，需要安装"
+    need_pkg=1
   else
     ok "adb 已就绪: $(adb version | head -1)"
   fi
   if ! python3 -c "import venv" >/dev/null 2>&1; then
-    warn "python3-venv 不可用，需安装"
-    need_apt=1
+    warn "python3-venv 不可用，需要安装"
+    need_pkg=1
   else
     ok "python3-venv 可用"
   fi
-  if [ "$need_apt" -eq 1 ]; then
+
+  if [ "$need_pkg" -eq 1 ]; then
+    # 探测包管理器与各发行版对应的包名
+    PKG_MGR=""
+    ADB_PKG=""; VENV_PKG=""
     if command -v apt-get >/dev/null 2>&1; then
-      info "尝试使用 apt 安装 (需要 sudo) ..."
-      sudo apt-get update
-      sudo apt-get install -y android-tools-adb python3-full python3-venv
+      PKG_MGR="apt"; ADB_PKG="android-tools-adb"; VENV_PKG="python3-full python3-venv"
+    elif command -v dnf >/dev/null 2>&1; then
+      PKG_MGR="dnf"; ADB_PKG="android-tools"; VENV_PKG="python3"
+    elif command -v yum >/dev/null 2>&1; then
+      PKG_MGR="yum"; ADB_PKG="android-tools"; VENV_PKG="python3"
+    elif command -v pacman >/dev/null 2>&1; then
+      PKG_MGR="pacman"; ADB_PKG="android-tools"; VENV_PKG="python"
+    elif command -v zypper >/dev/null 2>&1; then
+      PKG_MGR="zypper"; ADB_PKG="android-tools"; VENV_PKG="python3"
+    elif command -v apk >/dev/null 2>&1; then
+      PKG_MGR="apk"; ADB_PKG="android-tools"; VENV_PKG="python3"
     else
-      err "未找到 apt-get，请手动安装 android-tools-adb 与 python3-venv 后重试。"
+      err "未识别到受支持的包管理器 (apt/dnf/yum/pacman/zypper/apk)。"
+      err "请手动安装 adb 与 python3-venv 后重试。"
+      return 1
+    fi
+
+    # 是否为 root（root 时无需 sudo）
+    if [ "$(id -u)" -eq 0 ]; then
+      SUDO=""
+    else
+      SUDO="sudo"
+    fi
+
+    info "检测到包管理器: $PKG_MGR，准备安装 $ADB_PKG $VENV_PKG"
+    case "$PKG_MGR" in
+      apt)
+        $SUDO apt-get update
+        $SUDO apt-get install -y $ADB_PKG $VENV_PKG
+        ;;
+      dnf)
+        $SUDO dnf install -y $ADB_PKG $VENV_PKG
+        ;;
+      yum)
+        $SUDO yum install -y $ADB_PKG $VENV_PKG
+        ;;
+      pacman)
+        $SUDO pacman -S --needed --noconfirm $ADB_PKG $VENV_PKG
+        ;;
+      zypper)
+        $SUDO zypper install -y $ADB_PKG $VENV_PKG
+        ;;
+      apk)
+        $SUDO apk add $ADB_PKG $VENV_PKG
+        ;;
+    esac
+    # 安装后再确认
+    if ! command -v adb >/dev/null 2>&1; then
+      err "adb 仍未就绪，请检查上面的安装输出或手动安装。"
+    else
+      ok "adb 已安装: $(adb version | head -1)"
     fi
   fi
 
