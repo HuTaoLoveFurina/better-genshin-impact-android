@@ -6,9 +6,14 @@ import logging
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+from .i18n import SUPPORTED_GAME_LANGS, get_keywords
+
 log = logging.getLogger(__name__)
 
-# BetterGI 内置的优先选择关键词（包含即优先点击）
+# 默认游戏语言（原神客户端语言代码）
+DEFAULT_LANG: str = "zh-CN"
+
+# 中文兜底的内置优先选择关键词（包含即优先点击）
 DEFAULT_SELECT_KEYWORDS: list[str] = [
     "进入秘境", "领取奖励", "接受", "确认", "继续", "好的",
 ]
@@ -28,6 +33,9 @@ class Config:
     adb_path: str = "adb"
     local: bool = False             # True=在已 root 的安卓 shell 本地运行（无需 adb）
     package: str | None = None
+
+    # 语言
+    lang: str = DEFAULT_LANG         # 原神客户端语言代码（见 bgia/i18n.py）
 
     # 循环
     interval: float = 0.6            # 主循环间隔（秒）
@@ -77,13 +85,24 @@ class Config:
         with p.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
+        # 先按语言填充关键词默认（用户未显式指定时生效）
+        lang = str(data.get("lang", DEFAULT_LANG))
+        if lang not in SUPPORTED_GAME_LANGS:
+            log.warning("未知语言 '%s'，回退到 %s（可选: %s）",
+                        lang, DEFAULT_LANG, "/".join(SUPPORTED_GAME_LANGS))
+            lang = DEFAULT_LANG
+        cfg.lang = lang
+        kw = get_keywords(lang)
+        cfg.select_keywords = list(kw.get("option", []))
+        cfg.pause_keywords = list(kw.get("pause", []))
+
         valid = {f.name for f in fields(cls)}
         for k, v in data.items():
             if k in valid:
                 setattr(cfg, k, v)
             else:
                 log.warning("忽略未知配置项: %s", k)
-        log.info("已加载配置: %s", p)
+        log.info("已加载配置: %s (lang=%s)", p, cfg.lang)
         return cfg
 
     @classmethod

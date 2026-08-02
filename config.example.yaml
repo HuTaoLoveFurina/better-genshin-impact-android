@@ -10,6 +10,13 @@ adb_path: adb
 # 国际服 com.miHoYo.GenshinImpact / 云原神 com.miHoYo.cloudgames.ys
 # package: com.miHoYo.Yuanshen
 
+# ---------------- 语言 ----------------
+# 原神客户端语言。决定 OCR 识别模型与剧情关键词（继续/播放中/选项/暂停）。
+# 支持：zh-CN(简中) zh-TW(繁中) ja(日) ko(韩) en(英) fr(法) de(德)
+#      ru(俄) es(西) pt(葡) it(意) tr(土) id(印尼) vi(越) th(泰,识别不可靠)
+# 不填默认为 zh-CN。非中文语言会按需自动下载对应 OCR 模型。
+lang: zh-CN
+
 # ---------------- 循环 ----------------
 interval: 0.6        # 主循环间隔（秒），云原神串流建议调大到 0.8~1.0
 click_delay: 0.15    # 每次点击后的等待
