@@ -1,4 +1,4 @@
-"""配置加载：默认值 + YAML 覆盖。"""
+"""Configuration loading: built-in defaults with optional overrides from a YAML file."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ from .i18n import SUPPORTED_GAME_LANGS, get_keywords
 
 log = logging.getLogger(__name__)
 
-# 默认游戏语言（原神客户端语言代码）
+# Default game language (Genshin client language code)
 DEFAULT_LANG: str = "zh-CN"
 
-# 中文兜底的内置优先选择关键词（包含即优先点击）
+# Built-in priority-selection keywords (Chinese fallback); a containing match is clicked first
 DEFAULT_SELECT_KEYWORDS: list[str] = [
     "进入秘境", "领取奖励", "接受", "确认", "继续", "好的",
 ]
 
-# 默认不自动点击的选项（涉及消耗/不可逆操作），命中则暂停等待人工处理
+# Options not auto-clicked by default (consumable / irreversible actions); a hit pauses for manual handling
 DEFAULT_PAUSE_KEYWORDS: list[str] = [
     "退出秘境", "秘境退出", "结束秘境", "放弃", "离开", "结算",
     "购买", "消耗", "兑换", "商店", "传送",
@@ -27,46 +27,46 @@ DEFAULT_PAUSE_KEYWORDS: list[str] = [
 
 @dataclass
 class Config:
-    # 连接
+    # Connection
     serial: str | None = None
     wireless: str | None = None
     adb_path: str = "adb"
-    local: bool = False             # True=在已 root 的安卓 shell 本地运行（无需 adb）
+    local: bool = False             # True = run locally in a rooted Android shell (no adb needed)
     package: str | None = None
 
-    # 语言
-    lang: str = DEFAULT_LANG         # 原神客户端语言代码（见 bgia/i18n.py）
+    # Language
+    lang: str = DEFAULT_LANG         # Genshin client language code (see bgia/i18n.py)
 
-    # 循环
-    interval: float = 0.6            # 主循环间隔（秒）
-    click_delay: float = 0.15        # 点击后等待（秒）
+    # Loop
+    interval: float = 0.6            # main loop interval (seconds)
+    click_delay: float = 0.15        # wait after each tap (seconds)
 
-    # 剧情选项
+    # Dialogue options
     choose_option: bool = True
     option_mode: str = "first"       # first / second / last / random / none
-    before_choose_delay: float = 0.0 # 点击选项前额外等待（秒），留出语音时间
+    before_choose_delay: float = 0.0 # extra wait before clicking an option (seconds), leaves time for voice
     custom_priority: list[str] = field(default_factory=list)
     select_keywords: list[str] = field(default_factory=lambda: list(DEFAULT_SELECT_KEYWORDS))
     pause_keywords: list[str] = field(default_factory=lambda: list(DEFAULT_PAUSE_KEYWORDS))
-    prefer_orange: bool = False      # 橙色（关键剧情）选项优先；颜色检测在串流下易误判，默认关
+    prefer_orange: bool = False      # prefer orange (key-story) options; color detection is unreliable under streaming, off by default
 
-    # 行为开关
-    quick_skip: bool = True          # 快速点击推进对话
-    click_black_screen: bool = True  # 黑屏演出期间点击
-    auto_hangout_skip: bool = True   # 邀约自动点跳过
-    close_popup: bool = True         # 关闭弹出页面
-    click_continue: bool = True       # 枫丹主线等「点击任意处继续」提示自动推进
+    # Behavior switches
+    quick_skip: bool = True          # rapid tap to advance dialogue
+    click_black_screen: bool = True  # tap during black-screen cinematics
+    auto_hangout_skip: bool = True   # auto-click skip on hangout screens
+    close_popup: bool = True         # close pop-up pages
+    click_continue: bool = True       # auto-advance "tap anywhere to continue" prompts (e.g. Fontaine main story)
 
-    # 阈值
+    # Thresholds
     template_threshold: float = 0.80
-    # 黑屏判定：只有接近全黑才视为「黑屏演出」并点击推进。
-    # 注意云原神/原神暗色剧情界面背景也可能偏暗，阈值过低会误触，
-    # 故默认要求画面 92% 以上为近黑色才算黑屏。
+    # Black-screen check: only treat as a "black-screen cinematic" (and tap to advance) when nearly fully black.
+    # Note: cloud-Genshin / Genshin dark-story backgrounds can also be dim; too-low a threshold mis-triggers,
+    # so by default the screen must be >= 92% near-black to count as a black screen.
     black_ratio_min: float = 0.92
     black_ratio_max: float = 0.999
     orange_ratio: float = 0.06
 
-    # 调试
+    # Debug
     debug: bool = False
     debug_dir: str = "debug"
 
@@ -77,7 +77,7 @@ class Config:
             return cfg
         p = Path(path)
         if not p.exists():
-            log.warning("配置文件不存在，使用默认配置: %s", p)
+            log.warning("config file not found, using defaults: %s", p)
             return cfg
 
         import yaml
@@ -85,10 +85,10 @@ class Config:
         with p.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
-        # 先按语言填充关键词默认（用户未显式指定时生效）
+        # First fill keyword defaults by language (used when the user did not override explicitly)
         lang = str(data.get("lang", DEFAULT_LANG))
         if lang not in SUPPORTED_GAME_LANGS:
-            log.warning("未知语言 '%s'，回退到 %s（可选: %s）",
+            log.warning("unknown language '%s', falling back to %s (options: %s)",
                         lang, DEFAULT_LANG, "/".join(SUPPORTED_GAME_LANGS))
             lang = DEFAULT_LANG
         cfg.lang = lang
@@ -101,26 +101,26 @@ class Config:
             if k in valid:
                 setattr(cfg, k, v)
             else:
-                log.warning("忽略未知配置项: %s", k)
-        log.info("已加载配置: %s (lang=%s)", p, cfg.lang)
+                log.warning("ignoring unknown config key: %s", k)
+        log.info("config loaded: %s (lang=%s)", p, cfg.lang)
         return cfg
 
     @classmethod
     def _apply_env(cls, cfg: "Config") -> "Config":
-        """环境变量覆盖：便于容器/CI 中无需改配置文件即可切换策略。"""
+        """Environment-variable overrides: switch strategies in containers/CI without editing the config file."""
         env_mode = __import__("os").environ.get("BGIA_OPTION_MODE")
         if env_mode:
             valid = {"first", "second", "last", "random", "none"}
             if env_mode in valid:
                 cfg.option_mode = env_mode
-                log.info("环境变量 BGIA_OPTION_MODE=%s -> 生效", env_mode)
+                log.info("env BGIA_OPTION_MODE=%s -> applied", env_mode)
             else:
-                log.warning("环境变量 BGIA_OPTION_MODE=%r 无效，忽略（可选: %s）",
+                log.warning("env BGIA_OPTION_MODE=%r is invalid, ignored (options: %s)",
                             env_mode, "/".join(sorted(valid)))
 
         env_choose = __import__("os").environ.get("BGIA_CHOOSE_OPTION")
         if env_choose is not None:
             cfg.choose_option = env_choose.strip().lower() in ("1", "true", "yes", "on")
-            log.info("环境变量 BGIA_CHOOSE_OPTION=%s -> choose_option=%s",
+            log.info("env BGIA_CHOOSE_OPTION=%s -> choose_option=%s",
                      env_choose, cfg.choose_option)
         return cfg

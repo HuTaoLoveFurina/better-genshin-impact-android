@@ -1,11 +1,11 @@
-"""自动剧情任务：移植自 BetterGI 的 AutoSkipTrigger。
+"""Auto story-skip task, ported from BetterGI's AutoSkipTrigger.
 
-判定链路（每帧）：
-  1. 邀约界面   -> 点击跳过按钮
-  2. 对话选项   -> 感叹号优先 / 气泡 OCR 决策后点击
-  3. 播放中     -> 快速点击推进
-  4. 黑屏演出   -> 定时点击
-  5. 弹出页面   -> 点击关闭
+Per-frame decision chain:
+  1. Date/invitation screen -> click the skip button
+  2. Dialogue options       -> prefer the exclamation mark, otherwise decide via bubble OCR then click
+  3. Playing/cutscene       -> rapid tapping to advance
+  4. Black-screen cinematic  -> timed tapping
+  5. Pop-up pages           -> click close
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class AutoSkipTask:
         return self.window.scale
 
     def _tap_in_window(self, x: float, y: float) -> None:
-        """点击渲染区内坐标（自动换算为物理屏幕坐标）。"""
+        """Tap a coordinate inside the render region (auto-converted to physical screen coordinates)."""
         assert self.window is not None
         sx, sy = self.window.to_screen(x, y)
         self.device.tap(sx, sy)
@@ -90,7 +90,7 @@ class AutoSkipTask:
     # ------------------------------------------------------------- 状态判定
 
     def _is_playing(self, frame: np.ndarray) -> bool:
-        """检测左上角自动播放标识（stop_auto 按钮 / “播放中”文字）。"""
+        """Detect the auto-play marker at the top-left (stop_auto button / "playing" text)."""
         h, w = frame.shape[:2]
         roi = (0, 0, w // 5, h // 8)
 
@@ -120,7 +120,7 @@ class AutoSkipTask:
         h, w = frame.shape[:2]
         skip = self._find(frame, "hangout_skip.png", roi=(0, 0, w // 5, h // 8))
         if skip:
-            log.info("邀约跳过按钮 -> 点击")
+            log.info("hangout skip button -> tap")
             self._tap_match(skip)
             return True
         return False
@@ -128,10 +128,9 @@ class AutoSkipTask:
     # ------------------------------------------------------------- 选项
 
     def _option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
-        """选项搜索区：覆盖屏幕中下大部分区域（含左侧案件记录册/调查面板 + 右侧对话气泡）。
+        """Option search region: covers most of the lower-middle of the screen (left case-book/investigation panel + right dialogue bubbles).
 
-        原版仅扫描右半部分（普通对话气泡），无法覆盖枫丹案件记录册等左侧多选项列表 UI。
-        扩大为全宽中下区域后可同时兼容两种布局。
+The original only scanned the right half (normal dialogue bubbles) and could not cover left-side multi-option list UIs such as the Fontaine case-book. Extending to the full-width lower-middle region supports both layouts.
         """
         h, w = frame.shape[:2]
         # 左右各留边距避开 UI 装饰元素，上下留边避开顶部标题栏/底部按钮
@@ -146,7 +145,7 @@ class AutoSkipTask:
         # 感叹号（任务关键选项）最优先
         excl = self._find(frame, "icon_exclamation.png", roi=roi)
         if excl:
-            log.info("发现感叹号选项 -> 点击")
+            log.info("exclamation option found -> tap")
             self._tap_match(excl, offset_x=int(120 * self._scale()))
             self._last_option_click = time.time()
             return True
@@ -162,14 +161,14 @@ class AutoSkipTask:
         )
         icon_count = len(bubbles)
         if icon_count > 0:
-            log.debug("选项图标匹配数: %d", icon_count)
+            log.debug("option-icon match count: %d", icon_count)
 
         if not texts:
             # OCR 无结果但有图标 → 退化为按图标位置点击
             if icon_count > 0:
                 bubbles.sort(key=lambda m: m.y)
                 target = bubbles[0] if self.config.option_mode != "last" else bubbles[-1]
-                log.info("选项文本不可读(有%d个图标) -> 按位置点击第 %d 项", icon_count, bubbles.index(target) + 1)
+                log.info("option text unreadable (%d icons) -> tap item #%d by position", icon_count, bubbles.index(target) + 1)
                 self._tap_match(target, offset_x=int(80 * self._scale()))
                 self._last_option_click = time.time()
                 return True
@@ -190,17 +189,17 @@ class AutoSkipTask:
             time.sleep(self.config.before_choose_delay)
 
         idx, m = choice
-        log.info("选择选项[%d]: %s", idx + 1, m.text or "(无文本)")
+        log.info("selected option [%d]: %s", idx + 1, m.text or "(no text)")
         self._tap_in_window(m.center[0], m.center[1])
         self._last_option_click = time.time()
         return True
 
     def _read_options(self, frame: np.ndarray, roi: tuple[int, int, int, int]) -> list[Match]:
-        """对选项 ROI 整块 OCR，按 y 坐标聚类成多个选项，返回带文本的可点击区域。
+        """Run OCR on the whole option ROI, cluster into multiple options by y, and return text-bearing clickable regions.
 
-        过滤策略：
-          - NPC 对话文本通常在 ROI 底部 1/3 区域、从 x=0 开始、且文本较长
-          - 选项文本通常在 ROI 中上部分、x 偏右（气泡图标右侧）、长度适中
+Filtering strategy:
+          - NPC dialogue text usually sits in the bottom third of the ROI, starts at x=0, and is long
+          - option text usually sits in the upper-middle of the ROI, to the right (right of the bubble icon), and is moderate in length
         """
         x0, y0, w, h = roi
         crop = frame[y0 : y0 + h, x0 : x0 + w]
@@ -255,7 +254,7 @@ class AutoSkipTask:
             # 单字/极短文本通常不是有效选项（可能是碎片或 NPC 名单字）
             is_trivial = len(texts_) <= 2
             if is_npc_like or is_trivial:
-                log.debug("过滤非选项文本: %r (y=%.0f, x=%.0f, len=%d, npc=%s trivial=%s)",
+                log.debug("filtered non-option text: %r (y=%.0f, x=%.0f, len=%d, npc=%s trivial=%s)",
                           texts_, abs_gy, gx, len(texts_), is_npc_like, is_trivial)
                 continue
 
@@ -278,19 +277,19 @@ class AutoSkipTask:
         return out
 
     def _decide_option(self, options: list[Match]) -> tuple[int, Match] | None:
-        """按 BetterGI 的优先级决策要点击哪个选项。"""
+        """Decide which option to click, following BetterGI's priority rules."""
         # 1. 自定义优先选项
         for i, o in enumerate(options):
             for kw in self.config.custom_priority:
                 if kw and kw in o.text:
-                    log.debug("命中自定义优先词 '%s'", kw)
+                    log.debug("matched custom priority word '%s'", kw)
                     return i, o
 
         # 2. 内置优先词
         for i, o in enumerate(options):
             for kw in self.config.select_keywords:
                 if kw and kw in o.text:
-                    log.debug("命中内置优先词 '%s'", kw)
+                    log.debug("matched built-in priority word '%s'", kw)
                     return i, o
 
         # 3. 危险词 -> 暂停，交给人工
@@ -298,7 +297,7 @@ class AutoSkipTask:
             for kw in self.config.pause_keywords:
                 if kw and kw in o.text:
                     if self._paused_reason != kw:
-                        log.warning("选项含敏感词 '%s'（%s），暂停自动点击，请手动处理", kw, o.text)
+                        log.warning("option contains sensitive word '%s' (%s); pausing auto-tap, handle manually", kw, o.text)
                         self._paused_reason = kw
                     return None
         self._paused_reason = None
@@ -307,13 +306,13 @@ class AutoSkipTask:
         if self.config.prefer_orange:
             for i, o in enumerate(options):
                 if o.score > 0:
-                    log.debug("命中橙色选项")
+                    log.debug("matched orange option")
                     return i, o
 
         # 5. 兜底策略
         mode = self.config.option_mode
         if mode == "none":
-            log.info("选项模式=none，跳过自动选择，交由人工处理")
+            log.info("option mode=none; skip auto-selection, leave to manual control")
             return None
         if mode == "last":
             return len(options) - 1, options[-1]
@@ -330,7 +329,7 @@ class AutoSkipTask:
     # ------------------------------------------------------------- 推进/黑屏/弹窗
 
     def _handle_playing(self, frame: np.ndarray) -> bool:
-        """播放中：点击屏幕安全区推进对话（避开左上角按钮与右侧选项区）。"""
+        """While playing: tap a safe area of the screen to advance dialogue (avoiding the top-left button and right-side option area)."""
         if not self.config.quick_skip:
             return False
         h, w = frame.shape[:2]
@@ -348,7 +347,7 @@ class AutoSkipTask:
             return False
         self._last_black_click = now
         h, w = frame.shape[:2]
-        log.debug("黑屏演出 (占比 %.2f) -> 点击推进", ratio)
+        log.debug("black-screen cinematic (ratio %.2f) -> tap to advance", ratio)
         self._tap_in_window(w * 0.5, h * 0.5)
         return True
 
@@ -358,7 +357,7 @@ class AutoSkipTask:
         h, w = frame.shape[:2]
         close = self._find(frame, "page_close.png", roi=(w - w // 8, 0, w // 8, h // 8))
         if close:
-            log.info("检测到弹出页面 -> 关闭")
+            log.info("pop-up page detected -> close")
             self._tap_match(close)
             return True
         return False
@@ -366,17 +365,18 @@ class AutoSkipTask:
     # ------------------------------------------------------------- 点击任意处继续（枫丹主线等）
 
     def _find_option_bands(self, frame: np.ndarray) -> list[tuple[int, int, int]]:
-        """纯像素「选项暗带」检测：不依赖任何模板与 OCR。
+        """Pure-pixel "option dark-band" detection: no templates or OCR.
 
-        原神选项 UI 不论形式（普通对话气泡、齿轮选项、案件记录册列表行、
-        调查面板条目……）都有一个共同视觉特征——**比周围场景更暗的圆角横条**，
-        其上下边缘在逐行平均亮度上表现为一对「进入暗区 / 退出暗区」的突变。
+Whatever form the Genshin option UI takes (plain dialogue bubble, gear options, case-book list rows,
+investigation-panel entries ...), they share one visual feature -- a rounded dark band **darker than
+the surrounding scene**, whose top/bottom edges show up as a pair of "enter dark zone / exit dark zone"
+jumps in the per-row average brightness.
 
-        本函数扫描 option_roi 的整块区域，返回所有符合条件的暗带，
-        每个元素为 (绝对_y_中心, 绝对_x_点击位, 高度)。按 y 从小到大排序，
-        便于逐个推进（每次点最上方一项，下一帧再检测下一项）。
+This scans the whole option_roi and returns every qualifying dark band as
+(absolute_y_center, absolute_x_tap, height), sorted by y ascending so they can be advanced one by one
+(tap the topmost each frame, detect the next one on the following frame).
 
-        返回空列表表示当前画面没有可识别的选项暗带。
+An empty list means no recognizable option dark band on the current screen.
         """
         h, w = frame.shape[:2]
         roi = self._option_roi(frame)
@@ -478,28 +478,29 @@ class AutoSkipTask:
         return dedup
 
     def _guess_option_bubble(self, frame: np.ndarray) -> bool:
-        """兜底检测入口（纯像素，不依赖模板/OCR）。
+        """Fallback detection entry (pure pixel, no template/OCR).
 
-        识别无标准图标的特殊选项 UI（齿轮选项、案件记录册等），
-        点击其中最靠上的一个选项横条以推进剧情。多选项列表会逐帧逐个推进。
+Recognizes special option UIs without a standard icon (gear options, case-book, etc.), and taps the
+topmost option band to advance the story. Multi-option lists advance one item per frame.
         """
         bands = self._find_option_bands(frame)
         if not bands:
             return False
         # 每次只点最靠上的那一项，下一帧再处理下一项（兼容列表/多选项）
         abs_y, abs_x, band_h = bands[0]
-        log.info("纯像素检测到选项横条(共%d条, 点最上@y=%d, 高%dpx) -> 点击推进",
+        log.info("pure-pixel detected %d option band(s); tap topmost @y=%d, height=%dpx",
                  len(bands), abs_y, band_h)
         self._tap_in_window(abs_x, abs_y)
         self._last_option_click = time.time()
         return True
 
     def _has_continue_indicator(self, frame: np.ndarray) -> bool:
-        """纯像素检测底部中央的「点击任意处继续」指示符（向下箭头 / 倒三角）。
+        """Pure-pixel detection of the bottom-center "tap anywhere to continue" indicator (downward arrow / inverted triangle).
 
-        不依赖模板与 OCR：在底部中央 ROI 内寻找一个明显亮于四周的小面积亮块
-        （白色倒三角在暗色剧情背景上非常突出）。这是「点击任意处继续」提示的
-        视觉标志，足以与真正的对话选项界面区分。
+No templates or OCR: look for a small bright patch noticeably brighter than its surroundings inside the
+bottom-center ROI (a white inverted triangle stands out strongly against the dark story background).
+This is the visual signature of the "tap anywhere to continue" prompt, distinct enough from a real
+dialogue-option screen.
         """
         h, w = frame.shape[:2]
         # 底部中央约 1/2 宽、1/6 高的区域
@@ -534,14 +535,14 @@ class AutoSkipTask:
         return False
 
     def _is_click_continue(self, frame: np.ndarray) -> bool:
-        """检测「点击任意处继续 / 点击屏幕继续」类提示。
+        """Detect "tap anywhere to continue / tap screen to continue" prompts.
 
-        判定（满足任一即命中）：
-          1. 模板 icon_click_continue.png 命中（如有采集）；
-          2. OCR 命中「点击 ... 继续 / 任意处」字样；
-          3. 纯像素检测到底部中央的箭头/倒三角指示符，且画面无选项暗带。
-        第 3 条保证在模板缺失、OCR 未安装时仍能正常推进；
-        「无选项暗带」的联合判定避免在普通对话/选项界面误触发。"""
+Hit when any of the following holds:
+          1. template icon_click_continue.png matches (if captured);
+          2. OCR hits a "tap ... to continue / anywhere" phrase;
+          3. pure-pixel detection of a bottom-center arrow/inverted-triangle indicator AND no option dark band on screen.
+The 3rd rule keeps advancement working even when the template is missing or OCR is not installed;
+the "no option dark band" joint check avoids false triggers on normal dialogue/option screens."""
         h, w = frame.shape[:2]
 
         # --- 1) 底部倒三角/箭头模板（如有采集）---
@@ -573,13 +574,13 @@ class AutoSkipTask:
         return False
 
     def _handle_click_continue(self, frame: np.ndarray) -> bool:
-        """推进「点击任意处继续」类剧情。点击屏幕中央偏下（安全区）。"""
+        """Advance "tap anywhere to continue" style story. Tap the lower-center of the screen (safe zone)."""
         if not self.config.click_continue:
             return False
         if not self._is_click_continue(frame):
             return False
         h, w = frame.shape[:2]
-        log.info("检测到「点击任意处继续」提示 -> 点击推进")
+        log.info("'tap anywhere to continue' prompt detected -> tap to advance")
         self._tap_in_window(w * 0.5, h * 0.6)
         return True
 
@@ -594,7 +595,7 @@ class AutoSkipTask:
 
         frame = self.window.crop(frame_full)
         if frame.size == 0:
-            log.warning("裁剪后画面为空，重新定位窗口")
+            log.warning("cropped frame is empty; re-localizing window")
             self.window = None
             return
 
@@ -608,11 +609,11 @@ class AutoSkipTask:
             self._last_playing_at = now
         in_grace = (now - self._last_playing_at) <= PLAYING_FLAG_GRACE
 
-        # 邀约跳过（不依赖播放状态）
+        # Hangout skip (independent of playing state)
         if self._handle_hangout(frame):
             return
 
-        # 选项优先于推进，避免误点掉选项
+        # Options take priority over advancing, to avoid mis-tapping away an option
         if self._handle_options(frame):
             return
 
@@ -634,12 +635,12 @@ class AutoSkipTask:
         if not in_grace:
             diff = frame_diff_ratio(self._last_frame, frame)
             if diff < 0.01:
-                log.debug("画面静止且非播放态，待机中")
+                log.debug("screen idle and not playing; standing by")
 
         self._last_frame = frame
 
     def run(self) -> None:
-        log.info("自动剧情已启动，按 Ctrl+C 停止")
+        log.info("auto story-skip started; press Ctrl+C to stop")
         errors = 0
         while True:
             start = time.time()
@@ -650,7 +651,7 @@ class AutoSkipTask:
                 raise
             except Exception as exc:
                 errors += 1
-                log.error("循环异常 (累计%d,已忽略): %s", errors, exc)
+                log.error("loop exception (accumulated %d, ignored): %s", errors, exc)
                 # 不自动退出：持续重试，避免运行过久后程序终止
                 time.sleep(min(1.0 + errors * 0.5, 10.0))
 

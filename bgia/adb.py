@@ -1,10 +1,10 @@
-"""ADB 设备连接层：负责有线/无线连接、截图、模拟点击。
+"""ADB device connection layer: wired/wireless connection, screenshot capture, and tap/swipe input.
 
-支持两种运行模式：
-  - 默认（ADB 模式）：通过 PC 上的 ``adb`` 命令连接设备（Linux / macOS / Windows）。
-  - ``local=True``（已 root 的 Android shell）：直接在安卓设备自身的 shell 中运行，
-    截图/点击走 ``/system/bin/screencap`` 与 ``/system/bin/input``，无需 adb 转发。
-    典型场景：Termux（已 root）或 Magisk 终端中 ``python -m bgia.cli run --local``。
+Two run modes are supported:
+  - Default (ADB mode): drives the device through the ``adb`` command on a PC (Linux / macOS / Windows).
+  - ``local=True`` (rooted Android shell): runs directly inside the device's own shell, using
+    ``/system/bin/screencap`` and ``/system/bin/input`` for capture/input with no adb forwarding.
+    Typical use: Termux (rooted) or a Magisk terminal running ``python -m bgia.cli run --local``.
 """
 
 from __future__ import annotations
@@ -32,23 +32,23 @@ class AdbError(RuntimeError):
 class DisplayInfo:
     width: int
     height: int
-    rotation: int  # 0/1/2/3，1 和 3 为横屏
+    rotation: int  # 0/1/2/3, where 1 and 3 mean landscape
 
 
 def _resolve_adb(adb_path: str) -> str:
-    """在 PATH 或常见目录中定位 adb 可执行文件，兼容 Windows (.exe) 与 Linux。"""
-    # 1) PATH 中直接可找到
+    """Locate the adb executable in PATH or common directories, compatible with Windows (.exe) and Linux."""
+    # 1) directly found in PATH
     found = shutil.which(adb_path)
     if found:
         return found
 
-    # 2) Windows 上补全 .exe 后缀再试一次
+    # 2) on Windows, retry once with the .exe suffix appended
     if sys.platform.startswith("win"):
         if not adb_path.lower().endswith(".exe"):
             found = shutil.which(adb_path + ".exe")
             if found:
                 return found
-        # 常见位置：当前目录 / platform-tools / 用户目录
+        # common locations: current dir / platform-tools / user home
         candidates = [
             adb_path,
             adb_path + ".exe",
@@ -61,14 +61,14 @@ def _resolve_adb(adb_path: str) -> str:
         for c in candidates:
             if c and os.path.isfile(c):
                 return c
-        return adb_path  # 找不到则原样返回，交给上层报更清晰的错误
+        return adb_path  # if not found, return as-is and let the caller raise a clearer error
     return adb_path
 
 
 def _resolve_local_bin(name: str) -> str:
-    """已 root 安卓本地模式下，定位系统二进制（screencap / input 等）。
+    """In rooted-Android local mode, locate a system binary (screencap / input, etc.).
 
-    优先使用 PATH（Termux 等环境通常已包含），否则回退到常见的系统路径。
+Prefer PATH (usually present in Termux-like environments); otherwise fall back to common system paths.
     """
     found = shutil.which(name)
     if found:
@@ -80,15 +80,15 @@ def _resolve_local_bin(name: str) -> str:
 
 
 class AdbDevice:
-    """封装单台设备的 adb / 本地操作。
+    """Wrapper around a single device's adb / local operations.
 
-    截图默认走 ``exec-out screencap`` 二进制管道，避免 shell 的 CRLF 转换问题。
-    在部分老设备上该管道不稳定，此时自动降级为 ``screencap -p`` + 换行修复。
+Screenshots go through the ``exec-out screencap`` binary pipe by default to avoid the shell's CRLF conversion.
+On some older devices that pipe is unstable, in which case it auto-degrades to ``screencap -p`` + newline repair.
 
-    当 ``local=True`` 时所有命令直接在本地（已 root 的安卓 shell）执行：
-      - 截图：``screencap -p`` 输出 PNG 到 stdout
-      - 点击：``input tap x y``
-      - 无需 ``adb`` 前缀与序列号。
+When ``local=True``, all commands run directly on the local (rooted Android) shell:
+  - screenshot: ``screencap -p`` writes PNG to stdout
+  - tap: ``input tap x y``
+  - no ``adb`` prefix or serial needed.
     """
 
     def __init__(
@@ -100,18 +100,18 @@ class AdbDevice:
     ):
         self.local = local
         self.adb_path = _resolve_adb(adb_path) if not local else adb_path
-        # 本地模式下缓存系统二进制路径
+        # In local mode, cache the resolved system-binary paths
         self._screencap_bin = _resolve_local_bin("screencap") if local else ""
         self._input_bin = _resolve_local_bin("input") if local else ""
         self.serial = serial or ("local" if local else None)
         self.screencap_timeout = screencap_timeout
-        self._use_raw_screencap = not local  # 本地模式只用 PNG
+        self._use_raw_screencap = not local  # local mode uses PNG only
         self._display: DisplayInfo | None = None
-        # 最近一次截图的实际像素尺寸（物理像素，raw screencap 返回真实显示分辨率）
+        # Physical pixel size of the most recent screenshot (physical pixels; raw screencap returns real display resolution)
         self._frame_w: int | None = None
         self._frame_h: int | None = None
 
-    # ------------------------------------------------------------------ 基础
+    # ------------------------------------------------------------------ Basics
 
     def _base_cmd(self) -> list[str]:
         if self.local:
@@ -122,51 +122,51 @@ class AdbDevice:
         return cmd
 
     def run(self, *args: str, timeout: float = 15.0, binary: bool = False):
-        """执行命令。binary=True 时返回原始 bytes。
+        """Run a command. Returns raw bytes when binary=True.
 
-        local 模式下 args 即为本地要执行的命令（如 "screencap", "-p"）。
+In local mode, args are the local commands to execute (e.g. "screencap", "-p").
         """
         if self.local:
             try:
                 proc = subprocess.run(list(args), capture_output=True, timeout=timeout, check=False)
             except subprocess.TimeoutExpired as exc:
-                raise AdbError(f"命令超时: {' '.join(args)}") from exc
+                raise AdbError(f"command timed out: {' '.join(args)}") from exc
             except FileNotFoundError as exc:
-                raise AdbError(f"未找到本地命令: {' '.join(args)}（请确认已在 root shell 中运行）") from exc
+                raise AdbError(f"local command not found: {' '.join(args)} (make sure this runs inside a rooted shell)") from exc
             if proc.returncode != 0:
                 err = proc.stderr.decode("utf-8", "ignore").strip()
-                raise AdbError(f"命令失败 ({proc.returncode}): {' '.join(args)}\n{err}")
+                raise AdbError(f"command failed ({proc.returncode}): {' '.join(args)}\n{err}")
             return proc.stdout if binary else proc.stdout.decode("utf-8", "ignore")
 
         cmd = self._base_cmd() + list(args)
         try:
             proc = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired as exc:
-            raise AdbError(f"adb 命令超时: {' '.join(args)}") from exc
+            raise AdbError(f"adb command timed out: {' '.join(args)}") from exc
         if proc.returncode != 0:
             err = proc.stderr.decode("utf-8", "ignore").strip()
-            raise AdbError(f"adb 命令失败 ({proc.returncode}): {' '.join(args)}\n{err}")
+            raise AdbError(f"adb command failed ({proc.returncode}): {' '.join(args)}\n{err}")
         return proc.stdout if binary else proc.stdout.decode("utf-8", "ignore")
 
     def shell(self, command: str, timeout: float = 15.0) -> str:
         if self.local:
-            # 本地直接走 shell 解释命令（等价于 adb shell）
+            # In local mode, run the command via the shell directly (equivalent to `adb shell`)
             try:
                 proc = subprocess.run(
                     ["sh", "-c", command], capture_output=True, timeout=timeout, check=False
                 )
             except FileNotFoundError as exc:
-                raise AdbError(f"未找到 sh: {exc}") from exc
+                raise AdbError(f"sh not found: {exc}") from exc
             return proc.stdout.decode("utf-8", "ignore").strip()
         return self.run("shell", command, timeout=timeout).strip()
 
-    # ------------------------------------------------------------------ 连接
+    # ------------------------------------------------------------------ Connection
 
     @classmethod
     def list_devices(cls, adb_path: str = "adb", local: bool = False) -> list[tuple[str, str]]:
-        """返回 [(serial, state), ...]。"""
+        """Return [(serial, state), ...]."""
         if local:
-            # 本地模式：自检环境是否具备 root shell 能力
+            # Local mode: self-check whether the environment has root-shell capability
             if shutil.which("screencap") or os.path.isfile("/system/bin/screencap"):
                 return [("local", "device")]
             return []
@@ -174,9 +174,9 @@ class AdbDevice:
         try:
             out = subprocess.run([exe, "devices"], capture_output=True, timeout=15, check=False)
         except FileNotFoundError as exc:
-            raise AdbError(f"未找到 adb 可执行文件: {adb_path}，请安装 Android Platform Tools") from exc
+            raise AdbError(f"adb executable not found: {adb_path}; install Android Platform Tools") from exc
         except subprocess.TimeoutExpired as exc:
-            raise AdbError("adb devices 超时") from exc
+            raise AdbError("adb devices timed out") from exc
         devices = []
         for line in out.stdout.decode("utf-8", "ignore").splitlines()[1:]:
             line = line.strip()
@@ -188,15 +188,15 @@ class AdbDevice:
 
     @classmethod
     def connect_wireless(cls, address: str, adb_path: str = "adb", timeout: float = 20.0) -> str:
-        """连接无线设备，address 形如 192.168.1.10:5555。返回规范化后的 serial。"""
+        """Connect a wireless device; address looks like 192.168.1.10:5555. Returns the normalized serial."""
         exe = shutil.which(adb_path) or adb_path
         if ":" not in address:
             address = f"{address}:5555"
         proc = subprocess.run([exe, "connect", address], capture_output=True, timeout=timeout, check=False)
         msg = proc.stdout.decode("utf-8", "ignore").strip()
         if "connected" not in msg.lower() or "cannot" in msg.lower() or "failed" in msg.lower():
-            raise AdbError(f"无线连接失败: {msg}")
-        log.info("无线连接成功: %s", msg)
+            raise AdbError(f"wireless connection failed: {msg}")
+        log.info("wireless connection established: %s", msg)
         return address
 
     def wait_ready(self, timeout: float = 30.0) -> None:
@@ -208,21 +208,21 @@ class AdbDevice:
                         self.serial = serial
                     return
             time.sleep(1.0)
-        raise AdbError("等待设备就绪超时，请检查 USB 调试授权或无线连接状态")
+        raise AdbError("timed out waiting for the device to be ready; check USB debugging authorization or wireless connection")
 
-    # ------------------------------------------------------------------ 屏幕
+    # ------------------------------------------------------------------ Screen
 
     def get_display(self, refresh: bool = False) -> DisplayInfo:
         if self._display is not None and not refresh:
             return self._display
 
         size_out = self.shell("wm size")
-        # 优先使用 Override size（部分设备被应用改过分辨率）
+        # Prefer the Override size (some devices have their resolution changed by an app)
         m = re.search(r"Override size:\s*(\d+)x(\d+)", size_out) or re.search(
             r"Physical size:\s*(\d+)x(\d+)", size_out
         )
         if not m:
-            raise AdbError(f"无法解析屏幕尺寸: {size_out}")
+            raise AdbError(f"cannot parse screen size: {size_out}")
         w, h = int(m.group(1)), int(m.group(2))
 
         rot_out = self.shell("dumpsys input | grep -m 1 SurfaceOrientation") or ""
@@ -232,25 +232,25 @@ class AdbDevice:
             rm = re.search(r"orientation=(\d)", rot_out)
         rotation = int(rm.group(1)) if rm else 0
 
-        # wm size 给的是竖屏基准尺寸，横屏时交换
+        # `wm size` reports the portrait baseline; swap when in landscape
         if rotation in (1, 3) and h > w:
             w, h = h, w
 
         self._display = DisplayInfo(width=w, height=h, rotation=rotation)
-        log.debug("屏幕信息: %s", self._display)
+        log.debug("display info: %s", self._display)
         return self._display
 
     def screencap(self) -> np.ndarray:
-        """截取当前屏幕，返回 BGR ndarray。
+        """Capture the current screen and return a BGR ndarray.
 
-        同时缓存截图物理尺寸，供 tap/swipe 做 DPI/缩放自适应坐标换算。
+Also caches the screenshot's physical size for DPI/scale-adaptive coordinate conversion in tap/swipe.
         """
         if self.local:
-            # 本地模式：screencap -p 直接输出 PNG
+            # Local mode: `screencap -p` writes PNG directly to stdout
             data = self.run(self._screencap_bin, "-p", timeout=self.screencap_timeout, binary=True)
             img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
             if img is None:
-                raise AdbError("本地截图解码失败（确认 screencap 可用且已授权）")
+                raise AdbError("local screenshot decode failed (confirm screencap is available and authorized)")
             self._frame_w, self._frame_h = img.shape[1], img.shape[0]
             return img
 
@@ -260,20 +260,20 @@ class AdbDevice:
                 self._frame_w, self._frame_h = img.shape[1], img.shape[0]
                 return img
             except AdbError as exc:
-                log.warning("raw screencap 失败，降级为 PNG 模式: %s", exc)
+                log.warning("raw screencap failed, degrading to PNG mode: %s", exc)
                 self._use_raw_screencap = False
         img = self._screencap_png()
         self._frame_w, self._frame_h = img.shape[1], img.shape[0]
         return img
 
     def _to_input_coords(self, x: float, y: float) -> tuple[float, float]:
-        """把「截图物理像素坐标」换算为 ``input tap/swipe`` 期望的逻辑坐标。
+        """Convert a screenshot physical-pixel coordinate into the logical coordinate expected by ``input tap/swipe``.
 
-        背景：``screencap`` 产出的是真实显示分辨率（物理像素），而 Android 的
-        ``input tap`` 使用 ``wm size`` 报告的逻辑分辨率。当设备被改过 DPI、
-        ``wm density``、``wm size`` Override（很多人为了游戏缩放会这么做）时，
-        两者之间存在比例差 ``ratio = 物理宽 / 逻辑宽``，直接拿截图坐标去 tap 会
-        系统性偏移。这里依据缓存的帧尺寸与显示尺寸自动补偿。
+Background: ``screencap`` produces the real display resolution (physical pixels), while Android's
+``input tap`` uses the logical resolution reported by ``wm size``. When the device has a modified DPI,
+``wm density``, or a ``wm size`` Override (common for game scaling), there is a ratio difference
+``ratio = physical_width / logical_width``; tapping with the raw screenshot coordinates would drift
+systematically. This compensates automatically using the cached frame and display sizes.
         """
         if self._frame_w and self._display and self._display.width:
             ratio = self._frame_w / self._display.width
@@ -282,13 +282,13 @@ class AdbDevice:
         return x, y
 
     def _screencap_raw(self) -> np.ndarray:
-        """screencap 不带参数时输出原始像素，头部为 w/h/format(/colorspace)。"""
+        """When called without args, screencap outputs raw pixels with a header of w/h/format(/colorspace)."""
         data = self.run("exec-out", "screencap", timeout=self.screencap_timeout, binary=True)
         if len(data) < 16:
-            raise AdbError("screencap 返回数据过短")
+            raise AdbError("screencap returned data too short")
 
         w, h, fmt = np.frombuffer(data[:12], dtype="<u4")
-        # Android 9+ 头部多了 4 字节 colorspace
+        # Android 9+ has an extra 4-byte colorspace field in the header
         for header in (16, 12):
             expected = int(w) * int(h) * 4
             if len(data) - header == expected:
@@ -297,7 +297,7 @@ class AdbDevice:
                 if int(fmt) == 1:  # RGBA_8888
                     return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
                 return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-        raise AdbError(f"screencap 尺寸不匹配: w={w} h={h} len={len(data)}")
+        raise AdbError(f"screencap size mismatch: w={w} h={h} len={len(data)}")
 
     def _screencap_png(self) -> np.ndarray:
         data = self.run("exec-out", "screencap", "-p", timeout=self.screencap_timeout, binary=True)
@@ -305,13 +305,13 @@ class AdbDevice:
             data = data.replace(b"\r\n", b"\n")
         img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
-            raise AdbError("PNG 截图解码失败")
+            raise AdbError("PNG screenshot decode failed")
         return img
 
-    # ------------------------------------------------------------------ 输入
+    # ------------------------------------------------------------------ Input
 
     def tap(self, x: int, y: int) -> None:
-        # 截图物理坐标 → input 逻辑坐标（DPI/缩放自适应）
+        # Screenshot physical coords -> input logical coords (DPI/scale adaptive)
         ix, iy = self._to_input_coords(x, y)
         if self.local:
             self.run(self._input_bin, "tap", str(int(round(ix))), str(int(round(iy))))
@@ -319,7 +319,7 @@ class AdbDevice:
             self.shell(f"input tap {int(round(ix))} {int(round(iy))}")
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> None:
-        # 截图物理坐标 → input 逻辑坐标（DPI/缩放自适应）
+        # Screenshot physical coords -> input logical coords (DPI/scale adaptive)
         ix1, iy1 = self._to_input_coords(x1, y1)
         ix2, iy2 = self._to_input_coords(x2, y2)
         if self.local:
@@ -340,7 +340,7 @@ class AdbDevice:
         else:
             self.shell(f"input keyevent {keycode}")
 
-    # ------------------------------------------------------------------ 应用
+    # ------------------------------------------------------------------ apps
 
     def current_focus(self) -> str:
         out = self.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")

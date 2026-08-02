@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""便捷入口，等价于 python -m bgia.cli"""
+"""Convenience entry point, equivalent to `python -m bgia.cli`."""
 
 import sys
 

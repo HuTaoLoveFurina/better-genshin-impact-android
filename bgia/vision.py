@@ -1,6 +1,6 @@
-"""视觉识别层：模板匹配、OCR、橙色选项判定、黑屏检测。
+"""Vision recognition layer: template matching, OCR, orange-option detection, and black-screen detection.
 
-坐标基准与 BetterGI 一致：所有模板与 ROI 均以 1920x1080 定义，运行时按缩放系数换算。
+All templates and ROIs are defined against a 1920x1080 baseline and scaled at runtime by the render-region ratio, mirroring the coordinate convention used by BetterGI.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ class Match:
     height: int
     score: float = 0.0
     text: str = ""
-    click: tuple[int, int] | None = None  # 可选：推荐的点击坐标（相对 frame）
+    click: tuple[int, int] | None = None  # optional: recommended tap coordinate (relative to the frame)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -43,24 +43,24 @@ class Match:
         return self.x + self.width
 
 
-# ---------------------------------------------------------------- 模板匹配
+# ---------------------------------------------------------------- Template matching
 
 
 @lru_cache(maxsize=64)
 def _load_template(name: str) -> np.ndarray | None:
     path = ASSETS_DIR / name
     if not path.exists():
-        log.warning("模板缺失: %s", path)
+        log.warning("template missing: %s", path)
         return None
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if img is None:
-        log.warning("模板读取失败: %s", path)
+        log.warning("failed to read template: %s", path)
     return img
 
 
 @lru_cache(maxsize=128)
 def _scaled_template(name: str, scale_key: int) -> np.ndarray | None:
-    """按缩放系数缓存缩放后的模板。scale_key = round(scale * 1000)。"""
+    """Cache the scaled template by scale factor. scale_key = round(scale * 1000)."""
     tpl = _load_template(name)
     if tpl is None:
         return None
@@ -81,7 +81,7 @@ def match_template(
     roi: tuple[int, int, int, int] | None = None,
     mode: int = cv2.TM_CCOEFF_NORMED,
 ) -> Match | None:
-    """在 frame 中查找模板，返回最佳匹配（坐标相对 frame 原点）。"""
+    """Find a template in frame and return the best match (coordinates relative to the frame origin)."""
     tpl = _scaled_template(name, int(round(scale * 1000)))
     if tpl is None:
         return None
@@ -117,7 +117,7 @@ def match_template_multi(
     roi: tuple[int, int, int, int] | None = None,
     max_count: int = 10,
 ) -> list[Match]:
-    """多目标模板匹配 + NMS 去重。"""
+    """Multi-target template matching with NMS deduplication."""
     tpl = _scaled_template(name, int(round(scale * 1000)))
     if tpl is None:
         return []
@@ -155,11 +155,11 @@ def match_template_multi(
     return kept
 
 
-# ---------------------------------------------------------------- 颜色判定
+# ---------------------------------------------------------------- Color detection
 
 
 def is_orange_option(img: np.ndarray, ratio_threshold: float = 0.06) -> bool:
-    """BetterGI 逻辑：橙色文字占比超过阈值即视为关键剧情选项。"""
+    """BetterGI logic: if the proportion of orange text exceeds the threshold, treat it as a key-story option."""
     if img.size == 0:
         return False
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -168,7 +168,7 @@ def is_orange_option(img: np.ndarray, ratio_threshold: float = 0.06) -> bool:
 
 
 def black_ratio(frame: np.ndarray, low: int = 0, high: int = 40) -> float:
-    """中间 1/3 区域的黑色像素占比，用于黑屏演出检测。"""
+    """Ratio of black pixels in the middle 1/3 region, used for black-screen cinematic detection."""
     h, w = frame.shape[:2]
     mid = frame[h // 3 : h * 2 // 3, :]
     gray = cv2.cvtColor(mid, cv2.COLOR_BGR2GRAY)
@@ -177,7 +177,7 @@ def black_ratio(frame: np.ndarray, low: int = 0, high: int = 40) -> float:
 
 
 def frame_diff_ratio(a: np.ndarray | None, b: np.ndarray | None, thresh: int = 12) -> float:
-    """两帧差异比例，用于判断画面是否静止（等待中）。"""
+    """Frame-to-frame difference ratio, used to judge whether the screen is static (waiting)."""
     if a is None or b is None or a.shape != b.shape:
         return 1.0
     ga = cv2.cvtColor(cv2.resize(a, (192, 108)), cv2.COLOR_BGR2GRAY)
@@ -217,20 +217,21 @@ class OcrEngine:
                 except TypeError:
                     if self._lang != "ch":
                         log.warning(
-                            "当前 OCR 包(%s)不支持 lang= 多语言参数，已回退到默认中英文模型；"
-                            "升级到 rapidocr>=3.0 可启用 '%s' 语言识别。",
+                            "the installed OCR package (%s) does not support the lang= argument; "
+                            "falling back to the default Chinese/English model. "
+                            "Upgrade to rapidocr>=3.0 to enable '%s' recognition.",
                             label, self._lang,
                         )
                     self._engine = mod.RapidOCR()
                 self._available = True
-                log.info("OCR 引擎已加载: %s (lang=%s)", label, self._lang)
+                log.info("OCR engine loaded: %s (lang=%s)", label, self._lang)
                 return True
-            except Exception as exc:  # pragma: no cover - 依赖缺失路径
+            except Exception as exc:  # pragma: no cover - missing-dependency path
                 last_err = exc
 
         log.error(
-            "OCR 引擎加载失败，选项文本识别将降级为按位置点击: %s\n"
-            "  安装方式: pip install rapidocr onnxruntime",
+            "failed to load the OCR engine; option-text recognition falls back to positional tapping: %s\n"
+            "  install with: pip install rapidocr onnxruntime",
             last_err,
         )
         self._available = False

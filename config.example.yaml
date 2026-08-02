@@ -1,37 +1,37 @@
-# bgia 配置示例。复制为 config.yaml 后按需修改，运行时用 -c config.yaml 指定。
+# bgia configuration example. Copy to config.yaml and edit as needed, then pass it with `-c config.yaml` at runtime.
 
-# ---------------- 连接 ----------------
-# serial: "192.168.1.20:5555"   # 指定设备；多设备时必填，单设备可留空
-# wireless: "192.168.1.20:5555" # 填写后自动执行 adb connect
+# ---------------- Connection ----------------
+# serial: "192.168.1.20:5555"   # Target device; required when multiple devices are connected, can be empty for a single device
+# wireless: "192.168.1.20:5555" # If set, automatically runs `adb connect`
 adb_path: adb
 
-# 强制指定包名，留空则自动探测
-# 官服 com.miHoYo.Yuanshen / B服 com.miHoYo.ys.bilibili
-# 国际服 com.miHoYo.GenshinImpact / 云原神 com.miHoYo.cloudgames.ys
+# Force a specific package name; leave empty to auto-detect
+# CN official: com.miHoYo.Yuanshen / Bilibili: com.miHoYo.ys.bilibili
+# Global:      com.miHoYo.GenshinImpact / Cloud Genshin: com.miHoYo.cloudgames.ys
 # package: com.miHoYo.Yuanshen
 
-# ---------------- 语言 ----------------
-# 原神客户端语言。决定 OCR 识别模型与剧情关键词（继续/播放中/选项/暂停）。
-# 支持：zh-CN(简中) zh-TW(繁中) ja(日) ko(韩) en(英) fr(法) de(德)
-#      ru(俄) es(西) pt(葡) it(意) tr(土) id(印尼) vi(越) th(泰,识别不可靠)
-# 不填默认为 zh-CN。非中文语言会按需自动下载对应 OCR 模型。
+# ---------------- Language ----------------
+# Genshin client language. Determines the OCR model and the story keywords (继续/播放中/选项/暂停).
+# Supported: zh-CN(zh-Hans) zh-TW(zh-Hant) ja ko en fr de
+#            ru es pt it tr id vi th(th unreliable)
+# Defaults to zh-CN when omitted. Non-Chinese languages download the matching OCR model on demand.
 lang: zh-CN
 
-# ---------------- 循环 ----------------
-interval: 0.6        # 主循环间隔（秒），云原神串流建议调大到 0.8~1.0
-click_delay: 0.15    # 每次点击后的等待
+# ---------------- Loop ----------------
+interval: 0.6        # Main loop interval (seconds); for cloud-Genshin streaming, raise to 0.8~1.0
+click_delay: 0.15    # Wait after each tap
 
-# ---------------- 剧情选项 ----------------
+# ---------------- Dialogue options ----------------
 choose_option: true
-option_mode: first   # first(第一个) / second(第二个) / last(最后一个) / random(随机) / none(不选)
-before_choose_delay: 0.0   # 点击选项前额外等待秒数，想听完语音可设 2~3
+option_mode: first   # first / second / last / random / none
+before_choose_delay: 0.0   # Extra wait before clicking an option; set 2~3 to listen to the voice line
 
-# 自定义优先选项：文本包含其一即优先点击
+# Custom priority options: if the text contains any of these, click it first
 custom_priority: []
 #  - "继续深入"
 #  - "我准备好了"
 
-# 命中这些词时暂停自动点击，交由人工处理（防止误点消耗类选项）
+# Pause auto-tapping when any of these words are hit, leaving it to manual control (avoids mis-clicking consumable options)
 pause_keywords:
   - 退出秘境
   - 放弃
@@ -40,25 +40,25 @@ pause_keywords:
   - 兑换
   - 传送
 
-prefer_orange: true  # 橙色（关键剧情）选项优先
+prefer_orange: true  # Prefer orange (key-story) options
 
-# ---------------- 行为开关 ----------------
-quick_skip: true          # 播放中快速点击推进
-click_black_screen: true  # 黑屏演出期间点击
-auto_hangout_skip: true   # 邀约自动点跳过
-close_popup: true         # 自动关闭弹出页面
-click_continue: true       # 枫丹主线等「点击任意处继续」提示自动点击推进
+# ---------------- Behavior switches ----------------
+quick_skip: true          # Rapid tapping while playing/cutscene
+click_black_screen: true  # Tap during black-screen cinematics
+auto_hangout_skip: true   # Auto-click skip on hangout screens
+close_popup: true         # Auto-close pop-up pages
+click_continue: true       # Auto-tap on "click anywhere to continue" prompts (e.g. Fontaine main story)
 
-# ---------------- 阈值 ----------------
-template_threshold: 0.80  # 模板匹配阈值，误识别多就调高，识别不到就调低
+# ---------------- Thresholds ----------------
+template_threshold: 0.80  # Template-match threshold; raise if false positives, lower if not detected
 orange_ratio: 0.06
 
-# ---------------- 调试 ----------------
+# ---------------- Debug ----------------
 debug: false
 debug_dir: debug
 
-# ---------------- 环境变量（无需改配置文件，运行时覆盖） ----------------
-# BGIA_OPTION_MODE   : 可设 first / second / last / random / none
-# BGIA_CHOOSE_OPTION : 可设 true / false （是否自动选选项）
-# 例： BGIA_OPTION_MODE=second python run.py
+# ---------------- Environment variables (override at runtime, no config edit needed) ----------------
+# BGIA_OPTION_MODE   : first / second / last / random / none
+# BGIA_CHOOSE_OPTION : true / false (whether to auto-choose options)
+# e.g. BGIA_OPTION_MODE=second python run.py
 

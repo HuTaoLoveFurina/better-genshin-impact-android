@@ -1,4 +1,4 @@
-"""游戏窗口识别：定位原神/云原神进程，并计算 16:9 渲染区域（去除刘海安全区/黑边）。"""
+"""Game window detection: locate the Genshin / Cloud-Genshin process and compute the 16:9 render region (stripping notch safe-zones and letterbox bars)."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ from .adb import AdbDevice
 
 log = logging.getLogger(__name__)
 
-# 各版本包名
+# Package names per release channel
 GENSHIN_PACKAGES: dict[str, str] = {
-    "official": "com.miHoYo.Yuanshen",       # 官服
-    "bilibili": "com.miHoYo.ys.bilibili",    # B 服
-    "global": "com.miHoYo.GenshinImpact",    # 国际服（含亚服/欧服/美服/港澳台）
-    "cloud_cn": "com.miHoYo.cloudgames.ys",  # 云原神（国服）
-    "cloud_global": "com.miHoYo.cloudgames.genshinimpact",  # 云·原神（国际）
+    "official": "com.miHoYo.Yuanshen",       # CN official
+    "bilibili": "com.miHoYo.ys.bilibili",    # Bilibili (CN)
+    "global": "com.miHoYo.GenshinImpact",    # Global (incl. Asia/EU/NA/TW-HK-MO)
+    "cloud_cn": "com.miHoYo.cloudgames.ys",  # Cloud Genshin (CN)
+    "cloud_global": "com.miHoYo.cloudgames.genshinimpact",  # Cloud Genshin (Global)
 }
 
 CLOUD_PACKAGES = {"com.miHoYo.cloudgames.ys", "com.miHoYo.cloudgames.genshinimpact"}
@@ -29,7 +29,7 @@ ASPECT = BASE_W / BASE_H
 
 @dataclass
 class GameWindow:
-    """游戏渲染区域在物理屏幕中的位置与缩放关系。"""
+    """Position and scale relationship of the game's render region within the physical screen."""
 
     x: int
     y: int
@@ -40,38 +40,38 @@ class GameWindow:
 
     @property
     def scale(self) -> float:
-        """相对 1920x1080 基准的缩放系数。"""
+        """Scale factor relative to the 1920x1080 baseline."""
         return self.width / BASE_W
 
     def crop(self, frame: np.ndarray) -> np.ndarray:
         return frame[self.y : self.y + self.height, self.x : self.x + self.width]
 
     def to_screen(self, x: float, y: float) -> tuple[int, int]:
-        """把渲染区内坐标换算为物理屏幕坐标（用于点击）。"""
+        """Convert a coordinate inside the render region into a physical screen coordinate (for tapping)."""
         return int(self.x + x), int(self.y + y)
 
     def from_base(self, x: float, y: float) -> tuple[int, int]:
-        """把 1920x1080 基准坐标换算为物理屏幕坐标。"""
+        """Convert a 1920x1080-baseline coordinate into a physical screen coordinate."""
         s = self.scale
         return self.to_screen(x * s, y * s)
 
 
 def detect_package(device: AdbDevice) -> str | None:
-    """返回当前前台的原神相关包名。"""
+    """Return the package name of the foreground Genshin-related app."""
     focus = device.current_focus()
     for pkg in GENSHIN_PACKAGES.values():
         if pkg in focus:
             return pkg
-    # 前台窗口拿不到时，退而检查进程是否存活
+    # If the foreground window is unavailable, fall back to checking whether the process is alive
     for pkg in GENSHIN_PACKAGES.values():
         if device.is_package_running(pkg):
-            log.warning("包 %s 在运行但不在前台，请确认游戏已切到前台", pkg)
+            log.warning("package %s is running but not in the foreground; make sure the game is brought to the foreground", pkg)
             return pkg
     return None
 
 
 def _trim_letterbox(frame: np.ndarray, threshold: int = 18) -> tuple[int, int, int, int]:
-    """去掉四周纯黑边，返回 (x, y, w, h)。用于云原神/带黑边的串流画面。"""
+    """Strip pure-black borders on all sides and return (x, y, w, h). Used for Cloud-Genshin / letterboxed streaming frames."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     mask = gray > threshold
     if not mask.any():
@@ -89,10 +89,11 @@ def resolve_window(
     package: str | None = None,
     trim_black: bool = True,
 ) -> GameWindow:
-    """计算游戏 16:9 渲染区域。
+    """Compute the game's 16:9 render region.
 
-    手机全面屏通常比 16:9 更宽（如 20:9），原神会在两侧留出安全区，
-    实际画面居中且保持 16:9；云原神串流则可能上下或左右带黑边。
+Full-screen phones are usually wider than 16:9 (e.g. 20:9); Genshin leaves safe zones on both sides,
+keeping the actual picture centered at 16:9. Cloud-Genshin streaming may have letterbox bars on the
+top/bottom or left/right.
     """
     pkg = package or detect_package(device) or "unknown"
     is_cloud = pkg in CLOUD_PACKAGES
@@ -102,11 +103,11 @@ def resolve_window(
 
     if trim_black:
         bx, by, bw, bh = _trim_letterbox(frame)
-        # 只在黑边占比合理时采纳，避免整屏黑屏时误裁
+        # Only adopt when the black-border ratio is reasonable, to avoid mis-cropping on a fully black screen
         if bw >= fw * 0.5 and bh >= fh * 0.5:
             ox, oy, w, h = bx, by, bw, bh
 
-    # 把区域收敛到 16:9，多余部分左右/上下居中裁掉
+    # Converge the region to 16:9, centering and cropping the excess on the sides/top-bottom
     if w / h > ASPECT:
         new_w = int(round(h * ASPECT))
         ox += (w - new_w) // 2
@@ -118,7 +119,7 @@ def resolve_window(
 
     win = GameWindow(x=ox, y=oy, width=w, height=h, package=pkg, is_cloud=is_cloud)
     log.info(
-        "识别到游戏窗口: pkg=%s cloud=%s 区域=(%d,%d,%d,%d) 缩放=%.4f",
+        "game window detected: pkg=%s cloud=%s region=(%d,%d,%d,%d) scale=%.4f",
         pkg, is_cloud, ox, oy, w, h, win.scale,
     )
     return win

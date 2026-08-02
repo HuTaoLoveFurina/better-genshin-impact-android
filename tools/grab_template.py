@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""模板采集工具：从手机实机截图裁剪模板，自动归一化到 1920x1080 基准并保存。
+"""Template capture tool: crop templates from a real phone screenshot, auto-normalize to the 1920x1080 baseline, and save.
 
-用法：
-    # 1. 先抓一张当前画面（保存到 shot.png，同时输出渲染区信息）
+Usage:
+    # 1. Grab the current screen first (saved to shot.png, also prints render-region info)
     python tools/grab_template.py shot
 
-    # 2. 用任意看图软件量出目标图标在 shot.png 中的像素框，然后裁剪
+    # 2. Measure the target icon's pixel box in shot.png with any image viewer, then crop
     python tools/grab_template.py crop --rect 120,40,64,64 --name stop_auto.png
 
-    # 3. 交互式框选（需要有 GUI 环境，安装 opencv-python 而非 headless）
+    # 3. Interactive box selection (needs a GUI environment, install opencv-python not headless)
     python tools/grab_template.py pick --name icon_option.png
 """
 
@@ -39,7 +39,7 @@ def capture(serial: str | None):
 
 
 def save_template(crop, name: str, scale: float) -> Path:
-    """把实机裁剪结果缩放回 1920x1080 基准再保存。"""
+    """Scale the on-device crop back to the 1920x1080 baseline, then save."""
     if abs(scale - 1.0) > 1e-3:
         inv = 1.0 / scale
         nw = max(1, int(round(crop.shape[1] * inv)))
@@ -50,50 +50,50 @@ def save_template(crop, name: str, scale: float) -> Path:
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     out = ASSETS_DIR / name
     cv2.imwrite(str(out), crop)
-    print(f"已保存模板: {out}  尺寸={crop.shape[1]}x{crop.shape[0]}")
+    print(f"saved template: {out}  size={crop.shape[1]}x{crop.shape[0]}")
     return out
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="模板采集工具")
+    p = argparse.ArgumentParser(description="template capture tool")
     p.add_argument("action", choices=["shot", "crop", "pick"])
     p.add_argument("-s", "--serial")
-    p.add_argument("--rect", help="裁剪区域 x,y,w,h（相对渲染区左上角）")
-    p.add_argument("--name", help="模板文件名，如 icon_option.png")
-    p.add_argument("--out", default="shot.png", help="shot 模式输出路径")
+    p.add_argument("--rect", help="crop region x,y,w,h (relative to render-region top-left)")
+    p.add_argument("--name", help="template file name, e.g. icon_option.png")
+    p.add_argument("--out", default="shot.png", help="output path for shot mode")
     args = p.parse_args()
 
     frame, win = capture(args.serial)
-    print(f"渲染区: {win.width}x{win.height}  缩放={win.scale:.4f}")
+    print(f"render region: {win.width}x{win.height}  scale={win.scale:.4f}")
 
     if args.action == "shot":
         cv2.imwrite(args.out, frame)
-        print(f"已保存截图: {args.out}")
-        print("提示: 量取的坐标请以此图左上角为原点")
+        print(f"saved screenshot: {args.out}")
+        print("hint: measure coordinates with this image's top-left corner as origin")
         return 0
 
     if not args.name:
-        p.error("crop/pick 模式需要 --name")
+        p.error("crop/pick mode requires --name")
 
     if args.action == "crop":
         if not args.rect:
-            p.error("crop 模式需要 --rect x,y,w,h")
+            p.error("crop mode requires --rect x,y,w,h")
         x, y, w, h = (int(v) for v in args.rect.split(","))
         crop = frame[y : y + h, x : x + w]
         if crop.size == 0:
-            print("裁剪区域无效")
+            print("invalid crop region")
             return 1
         save_template(crop, args.name, win.scale)
         return 0
 
-    # pick: 交互式框选
-    roi = cv2.selectROI("拖动框选目标，回车确认 / c 取消", frame, showCrosshair=True)
+    # pick: interactive box selection
+    roi = cv2.selectROI("drag to select the target, Enter to confirm / c to cancel", frame, showCrosshair=True)
     cv2.destroyAllWindows()
     x, y, w, h = (int(v) for v in roi)
     if w == 0 or h == 0:
-        print("已取消")
+        print("canceled")
         return 1
-    print(f"选中区域: {x},{y},{w},{h}")
+    print(f"selected region: {x},{y},{w},{h}")
     save_template(frame[y : y + h, x : x + w], args.name, win.scale)
     return 0
 

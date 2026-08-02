@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul 2>&1
 REM ============================================================
-REM  bgia.bat — bgia 原神自动跳剧情 交互式管理脚本 (Windows)
+REM  bgia.bat — interactive management script for bgia (Genshin auto story-skip) (Windows)
 REM
-REM  启动前先选择游戏语言，再进入主菜单。
+REM  Pick the game language before launching, then enter the main menu.
 REM
-REM  用法:  bgia.bat
+REM  Usage:  bgia.bat
 REM ============================================================
 
 setlocal EnableDelayedExpansion
@@ -15,42 +15,45 @@ set "VENV_PY=%~dp0.venv\Scripts\python.exe"
 set "PID_FILE=%~dp0.bgia.pid"
 set "LOG_FILE=%~dp0bgia.log"
 set "SEL_LANG=zh-CN"
+REM UI_LANG=en (default) / zh — switched to zh once the user picks Simplified Chinese.
+set "UI_LANG=en"
 
-REM ---------------- 语言选择 ----------------
+REM ---------------- Language selection ----------------
 :langselect
 cls
 echo ============================================================
-echo   请选择游戏语言
+echo   Select the game language / 请选择游戏语言
 echo ============================================================
-echo   1) 英语 (English)        — 之后将让你选择 OCR 识别语言
-echo   2) 中文 (简体)           — 自动安装中文 OCR 包
-echo   3) 日语 (Japanese)       — 自动安装日语 OCR 包
-echo   4) 韩语 (Korean)         — 自动安装韩语 OCR 包
-echo   5) 俄语 (Russian)        — 自动安装俄语 OCR 包
+echo   1) English              — you will then pick the OCR recognition language
+echo   2) 中文 (简体)          — auto-install the Chinese OCR pack / 自动安装中文 OCR 包
+echo   3) Japanese             — auto-install the Japanese OCR pack
+echo   4) Korean               — auto-install the Korean OCR pack
+echo   5) Russian              — auto-install the Russian OCR pack
 echo ============================================================
 set "LC="
-set /p LC=请输入 [1-5]: 
-if "%LC%"=="2" ( set "SEL_LANG=zh-CN" & goto ensureocr )
+set /p LC=Enter / 请输入 [1-5]: 
+if "%LC%"=="2" ( set "SEL_LANG=zh-CN" & set "UI_LANG=zh" & goto ensureocr )
 if "%LC%"=="3" ( set "SEL_LANG=ja"    & goto ensureocr )
 if "%LC%"=="4" ( set "SEL_LANG=ko"    & goto ensureocr )
 if "%LC%"=="5" ( set "SEL_LANG=ru"    & goto ensureocr )
 if "%LC%"=="1" ( goto ocrlangsel )
-echo 无效输入，请输入 1-5。
+echo Invalid input, please enter 1-5.
 pause
 goto langselect
 
-REM ---------------- 英语：二级选择 OCR 语言 ----------------
-:oclangsel
+REM ---------------- English: secondary pick of OCR language ----------------
+:ocrlangsel
 cls
 echo ============================================================
-echo   英语客户端：请选择 OCR 要识别的语言
+echo   English client: choose the OCR recognition language
 echo ============================================================
-echo   1) 英语   2) 简体中文   3) 繁体中文   4) 日语   5) 韩语   6) 俄语
-echo   7) 法语   8) 德语   9) 西班牙语   10) 葡萄牙语  11) 意大利语  12) 土耳其语
-echo   13) 印尼语 14) 越南语  15) 泰语(不可靠)
+echo   1) English   2) Simplified Chinese   3) Traditional Chinese   4) Japanese   5) Korean   6) Russian
+echo   7) French   8) German   9) Spanish   10) Portuguese  11) Italian  12) Turkish
+echo   13) Indonesian 14) Vietnamese  15) Thai (unreliable)
 echo ============================================================
 set "OC="
-set /p OC=请输入 [1-15]: 
+set "SEL_LANG="
+set /p OC=Enter [1-15]: 
 if "%OC%"=="1"  ( set "SEL_LANG=en" )
 if "%OC%"=="2"  ( set "SEL_LANG=zh-CN" )
 if "%OC%"=="3"  ( set "SEL_LANG=zh-TW" )
@@ -67,55 +70,85 @@ if "%OC%"=="13" ( set "SEL_LANG=id" )
 if "%OC%"=="14" ( set "SEL_LANG=vi" )
 if "%OC%"=="15" ( set "SEL_LANG=th" )
 if "%SEL_LANG%"=="" (
-    echo 无效输入，请输入 1-15。
+    echo Invalid input, please enter 1-15.
     pause
     goto ocrlangsel
 )
 goto ensureocr
 
-REM ---------------- 预热/下载 OCR 语言包 ----------------
+REM ---------------- Preload/download the OCR language pack ----------------
 :ensureocr
 if not exist "%VENV_PY%" (
-    echo [警告] 虚拟环境未就绪，跳过 OCR 语言包预热（请先执行菜单 5 配置环境）。
+    if "!UI_LANG!"=="zh" (
+        echo [警告] 虚拟环境未就绪，跳过 OCR 语言包预热（请先执行菜单 5 配置环境）。
+    ) else (
+        echo [warn] virtualenv not ready; skipping OCR language-pack preload (run menu 5 first).
+    )
     goto menu
 )
-echo [信息] 正在预热/下载 OCR 语言包 (!SEL_LANG!) ...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在预热/下载 OCR 语言包 ^(!SEL_LANG!^) ...
+) else (
+    echo [info] preloading/downloading OCR language pack ^(!SEL_LANG!^) ...
+)
 "%VENV_PY%" "%~dp0tools\ensure_ocr.py" "!SEL_LANG!"
 if errorlevel 1 (
-    echo [警告] OCR 语言包预热失败，运行时将尝试自动下载（需联网）。
+    if "!UI_LANG!"=="zh" (
+        echo [警告] OCR 语言包预热失败，运行时将尝试自动下载（需联网）。
+    ) else (
+        echo [warn] OCR language-pack preload failed; runtime will try to auto-download (needs network).
+    )
 ) else (
-    echo [完成] OCR 语言包就绪: !SEL_LANG!
+    if "!UI_LANG!"=="zh" (
+        echo [完成] OCR 语言包就绪: !SEL_LANG!
+    ) else (
+        echo [done] OCR language pack ready: !SEL_LANG!
+    )
 )
 echo.
 pause
 goto menu
 
-REM ---------------- 主菜单 ----------------
+REM ---------------- Main menu ----------------
 :menu
 cls
 echo ============================================================
-echo   bgia 管理菜单   (当前语言: !SEL_LANG!)
-echo ============================================================
-echo   1) 启动程序
-echo   2) 重启程序
-echo   3) 关闭程序
-echo   4) 查看日志
-echo   5) 自动配置环境
-echo   6) 自动采集图标
-echo   0) 退出
+if "!UI_LANG!"=="zh" (
+    echo   bgia 管理菜单   ^(当前语言: !SEL_LANG!^)
+    echo ============================================================
+    echo   1^) 启动程序
+    echo   2^) 重启程序
+    echo   3^) 关闭程序
+    echo   4^) 查看日志
+    echo   5^) 自动配置环境
+    echo   6^) 自动采集图标
+    echo   0^) 退出
+) else (
+    echo   bgia management menu   ^(current language: !SEL_LANG!^)
+    echo ============================================================
+    echo   1^) Start
+    echo   2^) Restart
+    echo   3^) Stop
+    echo   4^) View log
+    echo   5^) Auto-configure environment
+    echo   6^) Auto-capture icons
+    echo   0^) Exit
+)
 echo ============================================================
 
-REM 显示运行状态
-set "STATE=未运行"
+REM Show runtime state
+if "!UI_LANG!"=="zh" ( set "STATE=未运行" ) else ( set "STATE=not running" )
 if exist "%PID_FILE%" (
     set /p PID=<"%PID_FILE%"
-    tasklist /FI "PID eq !PID!" 2>nul | findstr /R "[0-9]" >nul && set "STATE=运行中 (PID=!PID!)"
+    tasklist /FI "PID eq !PID!" 2>nul | findstr /R "[0-9]" >nul && (
+        if "!UI_LANG!"=="zh" ( set "STATE=运行中 (PID=!PID!)" ) else ( set "STATE=running (PID=!PID!)" )
+    )
 )
-echo   当前状态: !STATE!
+if "!UI_LANG!"=="zh" ( echo   状态: !STATE! ) else ( echo   status: !STATE! )
 echo.
 
 set "CHOICE="
-set /p CHOICE=请选择 [0-6]: 
+if "!UI_LANG!"=="zh" ( set /p CHOICE=请选择 [0-6]: ) else ( set /p CHOICE=Select [0-6]: )
 if "%CHOICE%"=="1" goto start
 if "%CHOICE%"=="2" goto restart
 if "%CHOICE%"=="3" goto stop
@@ -123,162 +156,253 @@ if "%CHOICE%"=="4" goto logs
 if "%CHOICE%"=="5" goto setup
 if "%CHOICE%"=="6" goto grab
 if "%CHOICE%"=="0" goto quit
-echo 无效输入，请输入 0-6。
+if "!UI_LANG!"=="zh" ( echo 无效输入，请输入 0-6。 ) else ( echo Invalid input, please enter 0-6. )
 pause
 goto menu
 
-REM ---------------- 1. 启动 ----------------
+REM ---------------- 1. Start ----------------
 :start
 if exist "%PID_FILE%" (
     set /p PID=<"%PID_FILE%"
     tasklist /FI "PID eq !PID!" 2>nul | findstr /R "[0-9]" >nul && (
-        echo [警告] 程序已在运行 (PID=!PID!)，无需重复启动。
+        if "!UI_LANG!"=="zh" (
+            echo [警告] 程序已在运行 ^(PID=!PID!^)，无需重复启动。
+        ) else (
+            echo [warn] already running ^(PID=!PID!^); no need to start again.
+        )
         pause
         goto menu
     )
 )
 if not exist "%VENV_PY%" (
-    echo [错误] 未找到虚拟环境，请先执行菜单 5 配置环境。
+    if "!UI_LANG!"=="zh" (
+        echo [错误] 未找到虚拟环境，请先执行菜单 5 配置环境。
+    ) else (
+        echo [error] virtualenv not found; run menu 5 to configure the environment first.
+    )
     pause
     goto menu
 )
-echo [信息] 正在后台启动 bgia (语言=!SEL_LANG!) ...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在后台启动 bgia ^(语言=!SEL_LANG!^) ...
+) else (
+    echo [info] starting bgia in the background ^(lang=!SEL_LANG!^) ...
+)
 start /B "" "%VENV_PY%" -m bgia.cli run --lang !SEL_LANG! >"%LOG_FILE%" 2>&1
 set "PID=%ERRORLEVEL%"
-REM 上面的 start 不会返回 PID，改用 wmic 取最新 python 进程
+REM The start above does not return a PID; use wmic to grab the latest python process
 for /f "tokens=2" %%p in ('wmic process where "name='python.exe' and commandline like '%%bgia.cli%%'" get processid ^| findstr /R "[0-9]"') do set "PID=%%p"
 echo !PID!>"%PID_FILE%"
 timeout /t 2 >nul
 tasklist /FI "PID eq !PID!" 2>nul | findstr /R "[0-9]" >nul && (
-    echo [完成] 已启动 (PID=!PID!)，日志: %LOG_FILE%
+    if "!UI_LANG!"=="zh" (
+        echo [完成] 已启动 ^(PID=!PID!^)，日志: %LOG_FILE%
+    ) else (
+        echo [done] started ^(PID=!PID!^), log: %LOG_FILE%
+    )
 ) || (
-    echo [错误] 启动失败，请查看日志: %LOG_FILE%
+    if "!UI_LANG!"=="zh" (
+        echo [错误] 启动失败，请查看日志: %LOG_FILE%
+    ) else (
+        echo [error] failed to start; check the log: %LOG_FILE%
+    )
     if exist "%PID_FILE%" del /f "%PID_FILE%"
 )
 pause
 goto menu
 
-REM ---------------- 2. 重启 ----------------
+REM ---------------- 2. Restart ----------------
 :restart
 if exist "%PID_FILE%" (
     set /p PID=<"%PID_FILE%"
     tasklist /FI "PID eq !PID!" 2>nul | findstr /R "[0-9]" >nul && (
-        echo [信息] 正在停止当前进程 (PID=!PID!) ...
+        if "!UI_LANG!"=="zh" (
+            echo [信息] 正在停止当前进程 ^(PID=!PID!^) ...
+        ) else (
+            echo [info] stopping the current process ^(PID=!PID!^) ...
+        )
         taskkill /PID !PID! >nul 2>&1
         timeout /t 2 >nul
         if exist "%PID_FILE%" del /f "%PID_FILE%"
-        echo [完成] 已停止旧进程
+        if "!UI_LANG!"=="zh" ( echo [完成] 旧进程已停止 ) else ( echo [done] old process stopped )
     )
 ) else (
-    echo [信息] 当前没有运行中的进程
+    if "!UI_LANG!"=="zh" ( echo [信息] 当前没有正在运行的进程 ) else ( echo [info] no running process at the moment )
 )
 goto start
 
-REM ---------------- 3. 关闭 ----------------
+REM ---------------- 3. Stop ----------------
 :stop
 if not exist "%PID_FILE%" (
-    echo [警告] 没有运行中的进程。
+    if "!UI_LANG!"=="zh" ( echo [警告] 没有正在运行的进程。 ) else ( echo [warn] no running process. )
     pause
     goto menu
 )
 set /p PID=<"%PID_FILE%"
-echo [信息] 正在停止进程 (PID=!PID!) ...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在停止进程 ^(PID=!PID!^) ...
+) else (
+    echo [info] stopping process ^(PID=!PID!^) ...
+)
 taskkill /PID !PID! >nul 2>&1
 timeout /t 2 >nul
 if exist "%PID_FILE%" del /f "%PID_FILE%"
-echo [完成] 已停止
+if "!UI_LANG!"=="zh" ( echo [完成] 已停止 ) else ( echo [done] stopped )
 pause
 goto menu
 
-REM ---------------- 4. 查看日志 ----------------
+REM ---------------- 4. View logs ----------------
 :logs
 if not exist "%LOG_FILE%" (
-    echo [警告] 尚未生成日志文件: %LOG_FILE%
+    if "!UI_LANG!"=="zh" (
+        echo [警告] 尚未生成日志文件: %LOG_FILE%
+    ) else (
+        echo [warn] no log file generated yet: %LOG_FILE%
+    )
     pause
     goto menu
 )
-echo [信息] 实时查看日志 (Ctrl+C 退出) ...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在实时查看日志 ^(按 Ctrl+C 退出^) ...
+) else (
+    echo [info] viewing log in real time ^(Ctrl+C to quit^) ...
+)
 powershell -NoProfile -Command "Get-Content -Path '%LOG_FILE%' -Wait"
 pause
 goto menu
 
-REM ---------------- 5. 自动配置环境 ----------------
+REM ---------------- 5. Auto-configure environment ----------------
 :setup
 echo ============================================================
-echo [信息] 开始自动配置项目环境
+if "!UI_LANG!"=="zh" (
+    echo [信息] 开始自动配置项目环境
+) else (
+    echo [info] starting automatic project environment setup
+)
 echo ============================================================
 where python >nul 2>&1 || (
-    echo [错误] 未检测到 python，请先安装 Python 3.10+ 并加入 PATH。
+    if "!UI_LANG!"=="zh" (
+        echo [错误] 未检测到 python，请先安装 Python 3.10+ 并加入 PATH。
+    ) else (
+        echo [error] python not detected; install Python 3.10+ and add it to PATH first.
+    )
     pause
     goto menu
 )
-echo [1/4] 检查 Python 与 pip ...
+if "!UI_LANG!"=="zh" ( echo [1/4] 检查 Python 与 pip ... ) else ( echo [1/4] checking Python and pip ... )
 python --version
 python -m pip --version
 
-echo [2/4] 准备虚拟环境 .venv ...
+if "!UI_LANG!"=="zh" ( echo [2/4] 准备虚拟环境 .venv ... ) else ( echo [2/4] preparing virtualenv .venv ... )
 if exist "%~dp0.venv\Scripts\python.exe" (
-    echo [完成] .venv 已存在，跳过创建
+    if "!UI_LANG!"=="zh" ( echo [完成] .venv 已存在，跳过创建 ) else ( echo [done] .venv already exists; skipping creation )
 ) else (
     python -m venv .venv
-    echo [完成] 已创建虚拟环境
+    if "!UI_LANG!"=="zh" ( echo [完成] 虚拟环境创建完成 ) else ( echo [done] virtualenv created )
 )
 
-echo [3/4] 安装依赖 ...
+if "!UI_LANG!"=="zh" ( echo [3/4] 安装依赖 ... ) else ( echo [3/4] installing dependencies ... )
 "%VENV_PY%" -m pip install --upgrade pip
 "%VENV_PY%" -m pip install -r "%~dp0requirements.txt"
-echo [完成] 依赖安装完成
+if "!UI_LANG!"=="zh" ( echo [完成] 依赖安装完成 ) else ( echo [done] dependencies installed )
 
-echo [4/4] 环境自检 ...
+if "!UI_LANG!"=="zh" ( echo [4/4] 环境自检 ... ) else ( echo [4/4] environment self-check ... )
 "%VENV_PY%" -c "import cv2, numpy, yaml; print('  cv2', cv2.__version__, '| numpy', numpy.__version__)"
 if errorlevel 1 (
-    echo [错误] 核心库导入失败，请检查上方报错
+    if "!UI_LANG!"=="zh" (
+        echo [错误] 核心库导入失败，请查看上方错误信息
+    ) else (
+        echo [error] core libraries failed to import; check the error above
+    )
     pause
     goto menu
 )
-echo [完成] 核心库导入正常
+if "!UI_LANG!"=="zh" ( echo [完成] 核心库导入正常 ) else ( echo [done] core libraries import OK )
 
 echo.
-echo [信息] Windows 上还需手动确保 adb.exe 在 PATH 中：
-echo   1. 下载 Android Platform Tools 并解压
-echo   2. 将其路径（含 adb.exe）加入系统环境变量 PATH
-echo   3. 或把 adb.exe 放到本项目根目录 / platform-tools 下
+if "!UI_LANG!"=="zh" (
+    echo [信息] Windows 下还需确保 adb.exe 已加入 PATH:
+    echo   1. 下载 Android Platform Tools 并解压
+    echo   2. 将其目录^(含 adb.exe^)添加到系统 PATH 环境变量
+    echo   3. 或将 adb.exe 放到本项目根目录 / platform-tools
+) else (
+    echo [info] On Windows, also make sure adb.exe is on PATH:
+    echo   1. Download Android Platform Tools and extract it
+    echo   2. Add its path ^(containing adb.exe^) to the system PATH environment variable
+    echo   3. Or place adb.exe in this project root / platform-tools
+)
 echo.
 echo ============================================================
-echo [完成] 环境配置完成！可返回主菜单按 1 启动。
+if "!UI_LANG!"=="zh" (
+    echo [完成] 环境已就绪！返回主菜单后按 1 即可启动。
+) else (
+    echo [done] environment ready! Return to the main menu and press 1 to start.
+)
 echo ============================================================
 pause
 goto menu
 
-REM ---------------- 6. 自动采集图标 ----------------
+REM ---------------- 6. Auto-capture icons ----------------
 :grab
 if not exist "%VENV_PY%" (
-    echo [错误] 未找到虚拟环境，请先执行菜单 5 配置环境。
+    if "!UI_LANG!"=="zh" (
+        echo [错误] 未找到虚拟环境，请先执行菜单 5 配置环境。
+    ) else (
+        echo [error] virtualenv not found; run menu 5 to configure the environment first.
+    )
     pause
     goto menu
 )
 echo ============================================================
-echo [信息] 自动采集模板图标
+if "!UI_LANG!"=="zh" (
+    echo [信息] 自动采集模板图标
+) else (
+    echo [info] auto-capturing template icons
+)
 echo ============================================================
-echo [提示] 请确保手机已通过 adb 连接，并停留在『对话/选项界面』。
+if "!UI_LANG!"=="zh" (
+    echo [提示] 请确认手机已通过 adb 连接，并停留在「对话/选项界面」。
+) else (
+    echo [hint] make sure the phone is connected via adb and stays on a 'dialogue/option screen'.
+)
 set "READY="
-set /p READY=是否已准备好? [y/N]: 
+if "!UI_LANG!"=="zh" ( set /p READY=是否已准备好? [y/N]: ) else ( set /p READY=Ready? [y/N]: )
 if /i not "%READY%"=="y" (
-    echo [警告] 已取消，请在手机准备好后重试菜单 6。
+    if "!UI_LANG!"=="zh" (
+        echo [警告] 已取消，准备好手机界面后再执行菜单 6。
+    ) else (
+        echo [warn] canceled; retry menu 6 after preparing the phone.
+    )
     pause
     goto menu
 )
-echo [信息] 运行 auto_grab.py 自动采集 stop_auto.png / icon_exclamation.png ...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在运行 auto_grab.py 采集 stop_auto.png / icon_exclamation.png ...
+) else (
+    echo [info] running auto_grab.py to capture stop_auto.png / icon_exclamation.png ...
+)
 "%VENV_PY%" "%~dp0tools\auto_grab.py"
-echo [信息] 采集 icon_option.png（交互式框选）...
+if "!UI_LANG!"=="zh" (
+    echo [信息] 正在采集 icon_option.png ^(交互式框选^) ...
+) else (
+    echo [info] capturing icon_option.png ^(interactive box selection^) ...
+)
 "%VENV_PY%" "%~dp0tools\grab_template.py" pick --name icon_option.png
-echo [信息] 当前 assets\1920x1080 内容:
+if "!UI_LANG!"=="zh" (
+    echo [信息] 当前 assets\1920x1080 内容:
+) else (
+    echo [info] current assets\1920x1080 contents:
+)
 dir /b "%~dp0assets\1920x1080" 2>nul
 echo.
-echo [完成] 图标采集流程结束。
+if "!UI_LANG!"=="zh" (
+    echo [完成] 图标采集流程结束。
+) else (
+    echo [done] icon capture flow finished.
+)
 pause
 goto menu
 
 :quit
-echo 再见。
+if "!UI_LANG!"=="zh" ( echo 再见。 ) else ( echo Goodbye. )
 exit /b 0

@@ -1,21 +1,21 @@
-"""多语言支持：游戏语言 → OCR 引擎语言 + 关键词表。
+"""Internationalization support: game-language codes -> OCR engine language + keyword tables.
 
-原神官方支持的语言分两组：
-  亚洲：简体中文(zh-CN)、繁体中文(zh-TW)、日语(ja)、韩语(ko)、
-        泰语(th)、印尼语(id)、越南语(vi)
-  欧洲及其他：英语(en)、法语(fr)、德语(de)、俄语(ru)、
-        西班牙语(es)、葡萄牙语(pt)、意大利语(it)、土耳其语(tr)
+Genshin Impact's officially supported languages fall into two groups:
+  Asia: Simplified Chinese (zh-CN), Traditional Chinese (zh-TW), Japanese (ja), Korean (ko),
+        Thai (th), Indonesian (id), Vietnamese (vi)
+  Europe & others: English (en), French (fr), German (de), Russian (ru),
+        Spanish (es), Portuguese (pt), Italian (it), Turkish (tr)
 
-OCR 引擎(RapidOCR)的识别模型对应当前可用代码：
+The OCR engine (RapidOCR) uses these model codes:
   ch / chinese_cht / japan / korean / en / latin / cyrillic
-其中 latin 覆盖法/德/西/葡/意/土/印尼/越南；cyrillic 覆盖俄语。
-泰语(th)在 RapidOCR 中无原生模型，退化为 latin（仅保留结构，识别不可靠），
-会在引擎初始化时给出警告。
+where latin covers fr/de/es/pt/it/tr/id/vi and cyrillic covers ru.
+Thai (th) has no native RapidOCR model and is degraded to latin (structure kept but recognition
+unreliable); a warning is emitted when the engine initializes.
 """
 
 from __future__ import annotations
 
-# 游戏语言代码(原神客户端) → RapidOCR 识别模型代码
+# Game-language code (Genshin client) -> RapidOCR recognition model code
 GAME_LANG_TO_OCR: dict[str, str] = {
     "zh-CN": "ch",
     "zh-TW": "chinese_cht",
@@ -31,17 +31,17 @@ GAME_LANG_TO_OCR: dict[str, str] = {
     "tr": "latin",
     "id": "latin",
     "vi": "latin",
-    "th": "latin",  # 退化：RapidOCR 无泰语模型，仅结构可用
+    "th": "latin",  # degraded: RapidOCR has no Thai model; structure only
 }
 
-# 原神客户端可选语言(供配置校验/提示)
+# Selectable Genshin client languages (used for config validation/hints)
 SUPPORTED_GAME_LANGS: list[str] = list(GAME_LANG_TO_OCR.keys())
 
-# 各语言的剧情关键词。每个语言提供：
-#   continue_: 提示"点击继续 / 轻触任意处 / 跳过"等词组
-#   playing:   剧情"播放中"标识词组
-#   option:    选项界面相关词组(放弃/选择/确认/采纳 等)
-#   pause:     暂停/退出剧情相关词组
+# Story keywords per language. Each language provides:
+#   continue_: phrases like "tap to continue / tap anywhere / skip"
+#   playing:   the "now playing" story indicator phrases
+#   option:    dialogue-option phrases (give up / choose / confirm / accept ...)
+#   pause:     pause/exit-story phrases
 KEYWORDS: dict[str, dict[str, list[str]]] = {
     "zh-CN": {
         "continue_": ["继续", "点击", "任意处", "轻触", "触摸", "跳过", "点击空白处"],
@@ -137,15 +137,15 @@ KEYWORDS: dict[str, dict[str, list[str]]] = {
 
 
 def get_ocr_lang(game_lang: str) -> str:
-    """返回 RapidOCR 识别模型代码；未知语言回退到 ch。"""
+    """Return the RapidOCR recognition model code; fall back to ch for unknown languages."""
     return GAME_LANG_TO_OCR.get(game_lang, "ch")
 
 
 def get_keywords(game_lang: str) -> dict[str, list[str]]:
-    """返回对应语言的剧情关键词表；未知语言回退到 zh-CN。"""
+    """Return the story-keyword table for the given language; fall back to zh-CN for unknown languages."""
     return KEYWORDS.get(game_lang, KEYWORDS["zh-CN"])
 
 
 def is_thai_degraded(game_lang: str) -> bool:
-    """泰语在 RapidOCR 无原生模型，返回 True 表示识别不可靠。"""
+    """Thai has no native RapidOCR model; returning True means recognition is unreliable."""
     return game_lang == "th"
