@@ -9,8 +9,8 @@ Genshin Impact's officially supported languages fall into two groups:
 The OCR engine (RapidOCR) uses these model codes:
   ch / chinese_cht / japan / korean / en / latin / cyrillic
 where latin covers fr/de/es/pt/it/tr/id/vi and cyrillic covers ru.
-Thai (th) has no native RapidOCR model and is degraded to latin (structure kept but recognition
-unreliable); a warning is emitted when the engine initializes.
+The selected PP-OCRv4 compatibility profile has no Thai recognition family, so Thai is degraded
+to latin (structure kept but recognition unreliable).
 """
 
 from __future__ import annotations
@@ -40,98 +40,123 @@ SUPPORTED_GAME_LANGS: list[str] = list(GAME_LANG_TO_OCR.keys())
 # Story keywords per language. Each language provides:
 #   continue_: phrases like "tap to continue / tap anywhere / skip"
 #   playing:   the "now playing" story indicator phrases
-#   option:    dialogue-option phrases (give up / choose / confirm / accept ...)
-#   pause:     pause/exit-story phrases
+#   option:    affirmative dialogue-option phrases (choose / confirm / accept ...)
+#   pause:     destructive, abandon, exit, or stop-story phrases
 KEYWORDS: dict[str, dict[str, list[str]]] = {
     "zh-CN": {
         "continue_": ["继续", "点击", "任意处", "轻触", "触摸", "跳过", "点击空白处"],
         "playing": ["播放中"],
-        "option": ["放弃", "选择", "确认", "采纳", "接受", "决定", "前往"],
-        "pause": ["退出", "结束", "暂停", "停止"],
+        "option": ["选择", "确认", "采纳", "接受", "决定", "前往"],
+        "pause": ["放弃", "退出", "结束", "暂停", "停止"],
     },
     "zh-TW": {
         "continue_": ["繼續", "點擊", "任意處", "輕觸", "觸摸", "跳過", "點擊空白處"],
         "playing": ["播放中"],
-        "option": ["放棄", "選擇", "確認", "採納", "接受", "決定", "前往"],
-        "pause": ["退出", "結束", "暫停", "停止"],
+        "option": ["選擇", "確認", "採納", "接受", "決定", "前往"],
+        "pause": ["放棄", "退出", "結束", "暫停", "停止"],
     },
     "ja": {
         "continue_": ["続き", "タップ", "次へ", "スキップ", "どこか", "タッチ"],
         "playing": ["再生中"],
-        "option": ["放棄", "選択", "確認", "採用", "受け入れ", "決定", "移動"],
-        "pause": ["終了", "一時停止", "停止"],
+        "option": ["選択", "確認", "採用", "受け入れ", "決定", "移動"],
+        "pause": ["放棄", "終了", "一時停止", "停止"],
     },
     "ko": {
         "continue_": ["계속", "탭", "다음", "스킵", "어디든", "터치"],
         "playing": ["재생 중", "재생중"],
-        "option": ["포기", "선택", "확인", "수락", "결정", "이동"],
-        "pause": ["종료", "일시정지", "정지"],
+        "option": ["선택", "확인", "수락", "결정", "이동"],
+        "pause": ["포기", "종료", "일시정지", "정지"],
     },
     "en": {
         "continue_": ["continue", "tap", "skip", "anywhere", "touch", "next"],
         "playing": ["playing"],
-        "option": ["abandon", "select", "confirm", "accept", "decide", "choose", "go to"],
-        "pause": ["exit", "end", "pause", "stop"],
+        "option": ["select", "confirm", "accept", "decide", "choose", "go to"],
+        "pause": ["abandon", "exit", "end", "pause", "stop"],
     },
     "fr": {
         "continue_": ["continuer", "appuyer", "passer", "partout", "touche", "suivant"],
         "playing": ["lecture"],
-        "option": ["abandonner", "sélectionner", "confirmer", "accepter", "décider", "choisir"],
-        "pause": ["quitter", "fin", "pause", "arrêter"],
+        "option": ["sélectionner", "confirmer", "accepter", "décider", "choisir"],
+        "pause": ["abandonner", "quitter", "fin", "pause", "arrêter"],
     },
     "de": {
         "continue_": ["weiter", "tippen", "überspringen", "überall", "berühren", "nächste"],
         "playing": ["wiedergabe"],
-        "option": ["ablehnen", "auswählen", "bestätigen", "annehmen", "entscheiden", "wählen"],
-        "pause": ["beenden", "ende", "pause", "stoppen"],
+        "option": ["auswählen", "bestätigen", "annehmen", "entscheiden", "wählen"],
+        "pause": ["ablehnen", "beenden", "ende", "pause", "stoppen"],
     },
     "ru": {
         "continue_": ["продолжить", "нажмите", "пропустить", "где", "коснитесь", "далее"],
         "playing": ["воспроизведение"],
-        "option": ["отказаться", "выбрать", "подтвердить", "принять", "решить"],
-        "pause": ["выход", "завершить", "пауза", "стоп"],
+        "option": ["выбрать", "подтвердить", "принять", "решить"],
+        "pause": ["отказаться", "выход", "завершить", "пауза", "стоп"],
     },
     "es": {
         "continue_": ["continuar", "tocar", "saltar", "en cualquier", "toca", "siguiente"],
         "playing": ["reproduciendo"],
-        "option": ["abandonar", "seleccionar", "confirmar", "aceptar", "decidir", "elegir"],
-        "pause": ["salir", "fin", "pausa", "detener"],
+        "option": ["seleccionar", "confirmar", "aceptar", "decidir", "elegir"],
+        "pause": ["abandonar", "salir", "fin", "pausa", "detener"],
     },
     "pt": {
         "continue_": ["continuar", "toque", "pular", "em qualquer", "tocar", "próximo"],
         "playing": ["reproduzindo"],
-        "option": ["abandonar", "selecionar", "confirmar", "aceitar", "decidir", "escolher"],
-        "pause": ["sair", "fim", "pausa", "parar"],
+        "option": ["selecionar", "confirmar", "aceitar", "decidir", "escolher"],
+        "pause": ["abandonar", "sair", "fim", "pausa", "parar"],
     },
     "it": {
         "continue_": ["continua", "tocca", "salta", "ovunque", "tocco", "avanti"],
         "playing": ["riproduzione"],
-        "option": ["abbandonare", "selezionare", "confermare", "accettare", "decidere", "scegliere"],
-        "pause": ["esci", "fine", "pausa", "ferma"],
+        "option": ["selezionare", "confermare", "accettare", "decidere", "scegliere"],
+        "pause": ["abbandonare", "esci", "fine", "pausa", "ferma"],
     },
     "tr": {
         "continue_": ["devam", "dokun", "geç", "herhangi", "dokunma", "ileri"],
         "playing": ["oynatılıyor"],
-        "option": ["vazgeç", "seç", "onayla", "kabul", "karar", "git"],
-        "pause": ["çık", "bitir", "duraklat", "durdur"],
+        "option": ["seç", "onayla", "kabul", "karar", "git"],
+        "pause": ["vazgeç", "çık", "bitir", "duraklat", "durdur"],
     },
     "id": {
         "continue_": ["lanjut", "ketuk", "lewati", "di mana saja", "sentuh", "berikutnya"],
         "playing": ["memutar"],
-        "option": ["tinggalkan", "pilih", "konfirmasi", "terima", "putuskan", "pergi"],
-        "pause": ["keluar", "akhiri", "jeda", "berhenti"],
+        "option": ["pilih", "konfirmasi", "terima", "putuskan", "pergi"],
+        "pause": ["tinggalkan", "keluar", "akhiri", "jeda", "berhenti"],
     },
     "vi": {
         "continue_": ["tiếp tục", "chạm", "bỏ qua", "bất kỳ", "chạm vào", "tiếp"],
         "playing": ["đang phát"],
-        "option": ["từ bỏ", "chọn", "xác nhận", "chấp nhận", "quyết định", "đi đến"],
-        "pause": ["thoát", "kết thúc", "tạm dừng", "dừng"],
+        "option": ["chọn", "xác nhận", "chấp nhận", "quyết định", "đi đến"],
+        "pause": ["từ bỏ", "thoát", "kết thúc", "tạm dừng", "dừng"],
     },
     "th": {
         "continue_": ["ดำเนินการต่อ", "แตะ", "ข้าม", "ที่ใดก็ได้", "สัมผัส", "ถัดไป"],
         "playing": ["กำลังเล่น"],
-        "option": ["ยอม放弃", "เลือก", "ยืนยัน", "ยอมรับ", "ตัดสินใจ", "ไปที่"],
-        "pause": ["ออก", "สิ้นสุด", "หยุดชั่วคราว", "หยุด"],
+        "option": ["เลือก", "ยืนยัน", "ยอมรับ", "ตัดสินใจ", "ไปที่"],
+        "pause": ["ละทิ้ง", "ออก", "สิ้นสุด", "หยุดชั่วคราว", "หยุด"],
+    },
+}
+
+# Verified task terms mirrored from BetterGI's guild resources. Other languages
+# require explicit CLI text until their exact in-game strings are validated.
+GUILD_TERMS: dict[str, dict[str, list[str]]] = {
+    "zh-CN": {
+        "katheryne": ["凯瑟琳"],
+        "daily": ["每日"],
+        "expedition": ["探索"],
+    },
+    "zh-TW": {
+        "katheryne": ["凱瑟琳"],
+        "daily": ["每日"],
+        "expedition": ["探索"],
+    },
+    "en": {
+        "katheryne": ["Katheryne"],
+        "daily": ["Daily"],
+        "expedition": ["Expedition"],
+    },
+    "fr": {
+        "katheryne": ["Catherine"],
+        "daily": ["quotidien"],
+        "expedition": ["Expédition"],
     },
 }
 
@@ -146,6 +171,12 @@ def get_keywords(game_lang: str) -> dict[str, list[str]]:
     return KEYWORDS.get(game_lang, KEYWORDS["zh-CN"])
 
 
+def get_guild_terms(game_lang: str) -> dict[str, list[str]]:
+    """Return only verified Adventurers' Guild terms for the selected game language."""
+
+    return GUILD_TERMS.get(game_lang, {})
+
+
 def is_thai_degraded(game_lang: str) -> bool:
-    """Thai has no native RapidOCR model; returning True means recognition is unreliable."""
+    """Thai has no PP-OCRv4 profile in this project; returning True means OCR is unreliable."""
     return game_lang == "th"

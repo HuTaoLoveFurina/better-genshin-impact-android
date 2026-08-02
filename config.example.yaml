@@ -11,10 +11,10 @@ adb_path: adb
 # package: com.miHoYo.Yuanshen
 
 # ---------------- Language ----------------
-# Genshin client language. Determines the OCR model and the story keywords (继续/播放中/选项/暂停).
+# Genshin client language. Determines the OCR model and localized story keywords.
 # Supported: zh-CN(zh-Hans) zh-TW(zh-Hant) ja ko en fr de
 #            ru es pt it tr id vi th(th unreliable)
-# Defaults to zh-CN when omitted. Non-Chinese languages download the matching OCR model on demand.
+# Defaults to zh-CN when omitted. Recognition families use PP-OCRv4 mobile models on demand.
 lang: zh-CN
 
 # ---------------- Loop ----------------
@@ -40,17 +40,24 @@ pause_keywords:
   - 兑换
   - 传送
 
-prefer_orange: true  # Prefer orange (key-story) options
+prefer_orange: false # Optional preference for orange key-story options; matches the built-in default
 
 # ---------------- Behavior switches ----------------
-quick_skip: true          # Rapid tapping while playing/cutscene
+quick_skip: true          # Rapid tapping only during an active Talk state
 click_black_screen: true  # Tap during black-screen cinematics
 auto_hangout_skip: true   # Auto-click skip on hangout screens
 close_popup: true         # Auto-close pop-up pages
 click_continue: true       # Auto-tap on "click anywhere to continue" prompts (e.g. Fontaine main story)
 
+# ---------------- Dialogue-state detection ----------------
+talk_grace_seconds: 10.0   # Safe post-dialogue window for pop-ups and continue prompts
+legacy_talk_detection: true # Keep stop_auto and playing-text fallbacks for Android/cloud clients
+
 # ---------------- Thresholds ----------------
 template_threshold: 0.80  # Template-match threshold; raise if false positives, lower if not detected
+quick_teleport_threshold: 0.80 # Map-template threshold; validated in the safe 0.75~1.0 range
+black_ratio_min: 0.92
+black_ratio_max: 0.999
 orange_ratio: 0.06
 
 # ---------------- Debug ----------------
@@ -61,4 +68,3 @@ debug_dir: debug
 # BGIA_OPTION_MODE   : first / second / last / random / none
 # BGIA_CHOOSE_OPTION : true / false (whether to auto-choose options)
 # e.g. BGIA_OPTION_MODE=second python run.py
-

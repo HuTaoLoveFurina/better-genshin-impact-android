@@ -16,9 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from bgia.config import Config  # noqa: E402
-from bgia.game import resolve_window, GameWindow  # noqa: E402
+from bgia.game import resolve_window  # noqa: E402
 from bgia.autoskip import AutoSkipTask  # noqa: E402
-from bgia.vision import Match  # noqa: E402
 
 
 def main() -> int:
@@ -29,9 +28,6 @@ def main() -> int:
 
     frame_full = cv2.imread(str(path))
     cfg = Config._apply_env(Config())
-    task = AutoSkipTask.__new__(AutoSkipTask)
-    task.config = cfg
-    task.ocr = __import__("bgia.vision", fromlist=["OcrEngine"]).OcrEngine()
     class _FakeDev:
         def current_focus(self):
             return cfg.package or ""
@@ -39,24 +35,22 @@ def main() -> int:
         def is_package_running(self, p):
             return True
 
+    task = AutoSkipTask(_FakeDev(), cfg)
     task.window = resolve_window(_FakeDev(), frame_full, cfg.package)
-    task._paused_reason = None
 
     print(f"==> input: {path}  {frame_full.shape[1]}x{frame_full.shape[0]}")
     print(f"==> render region: x={task.window.x} y={task.window.y} "
           f"{task.window.width}x{task.window.height} scale={task.window.scale:.4f}\n")
 
     frame = task.window.crop(frame_full)
-    print("[1] playing-state check (_is_playing):")
-    playing = task._is_playing(frame)
-    print(f"    -> {playing}")
-    if playing:
-        m = task._find(frame, "stop_auto.png")
-        print(f"    stop_auto hit: {None if not m else (m.x, m.y, round(m.score,3))}")
+    print("[1] Talk-state check:")
+    talk = task._talk_detector.observe(frame, task._scale())
+    print(f"    active={talk.active} grace={talk.in_grace} evidence={talk.evidence.value}")
 
-    print("\n[2] option check (_handle_options, detection only, no tapping):")
-    roi = task._option_roi(frame)
-    print(f"    option ROI: {roi}")
+    print("\n[2] option check (recognition only, no tapping):")
+    roi = task._standard_option_roi(frame)
+    print(f"    standard ROI: {roi}")
+    print(f"    extended ROI: {task._extended_option_roi(frame)}")
     excl = task._find(frame, "icon_exclamation.png", roi=roi)
     print(f"    exclamation (quest-critical): {None if not excl else (excl.x, excl.y, round(excl.score,3))}")
     bubbles = task._find_multi(frame, "icon_option.png", roi) if hasattr(task, "_find_multi") else None
@@ -67,7 +61,17 @@ def main() -> int:
     for i, b in enumerate(bubbles[:8]):
         print(f"      #{i} ({b.x},{b.y},{b.width}x{b.height}) score={b.score:.3f}")
     if bubbles:
-        texts = task._read_options(frame, roi)
+        lowest = max(bubbles, key=lambda item: item.y)
+        text_y = frame.shape[0] // 12
+        texts = task._read_options(
+            frame,
+            (
+                lowest.right + round(8 * task._scale()),
+                text_y,
+                round(535 * task._scale()),
+                lowest.bottom + round(30 * task._scale()) - text_y,
+            ),
+        )
         print(f"    OCR text ({len(texts)}):")
         for i, t in enumerate(texts):
             print(f"      [{i}] {t.text!r} orange={t.score>0}")

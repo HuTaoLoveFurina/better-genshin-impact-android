@@ -1,11 +1,10 @@
 """Auto story-skip task, ported from BetterGI's AutoSkipTrigger.
 
 Per-frame decision chain:
-  1. Date/invitation screen -> click the skip button
-  2. Dialogue options       -> prefer the exclamation mark, otherwise decide via bubble OCR then click
-  3. Playing/cutscene       -> rapid tapping to advance
-  4. Black-screen cinematic  -> timed tapping
-  5. Pop-up pages           -> click close
+  1. Handle the hangout skip button.
+  2. During Talk, inspect dialogue options before advancing the conversation.
+  3. During the post-Talk grace window, handle pop-ups and explicit continue prompts.
+  4. Outside active Talk, handle tightly gated black-screen cinematics.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import logging
 import random
 import time
 from datetime import datetime
+from enum import Enum, auto
 from pathlib import Path
 
 import cv2
@@ -22,7 +22,8 @@ import numpy as np
 from .adb import AdbDevice
 from .config import Config
 from .game import GameWindow, resolve_window
-from .i18n import get_keywords
+from .i18n import get_keywords, get_ocr_lang
+from .talk_state import TalkEvidence, TalkStateDetector
 from .vision import (
     Match,
     OcrEngine,
@@ -35,24 +36,35 @@ from .vision import (
 
 log = logging.getLogger(__name__)
 
-# Grace period (seconds) after the playing indicator disappears before we treat playback as stopped; kept in line with BetterGI.
-PLAYING_FLAG_GRACE = 10.0
+class OptionOutcome(Enum):
+    """Result of processing dialogue options in one frame."""
+
+    NO_OPTION = auto()
+    HANDLED = auto()
+    PAUSED = auto()
 
 
 class AutoSkipTask:
     def __init__(self, device: AdbDevice, config: Config):
         self.device = device
-        self.config = config
-        self.ocr = OcrEngine(lang=config.lang)
+        self.config = config.validate()
+        self.ocr = OcrEngine(lang=get_ocr_lang(config.lang))
         # Load the story keywords for the configured language (continue / playing / option / pause).
         self._kw = get_keywords(config.lang)
+        self._talk_detector = TalkStateDetector(
+            self.ocr,
+            self._kw.get("playing", []),
+            threshold=config.template_threshold,
+            grace_seconds=config.talk_grace_seconds,
+            legacy_fallback=config.legacy_talk_detection,
+        )
         self.window: GameWindow | None = None
 
-        self._last_playing_at = 0.0
         self._last_black_click = 0.0
         self._last_option_click = 0.0
         self._last_frame: np.ndarray | None = None
         self._paused_reason: str | None = None
+        self._last_talk_evidence = TalkEvidence.NONE
         self._frame_index = 0
 
     # ------------------------------------------------------------- utilities
@@ -90,27 +102,9 @@ class AutoSkipTask:
     # ------------------------------------------------------------- state detection
 
     def _is_playing(self, frame: np.ndarray) -> bool:
-        """Detect the auto-play marker at the top-left (stop_auto button / "playing" text)."""
-        h, w = frame.shape[:2]
-        roi = (0, 0, w // 5, h // 8)
+        """Compatibility wrapper around the shared Talk-state detector."""
 
-        if self._find(frame, "stop_auto.png", roi=roi):
-            return True
-
-        # OCR fallback: look for "auto-playing / playing" text in the top-left corner.
-        s = self._scale()
-        tx, ty = int(60 * s), int(25 * s)
-        tw, th = int(180 * s), int(50 * s)
-        crop = frame[ty : ty + th, tx : tx + tw]
-        playing_words = self._kw.get("playing", [])
-        for r in self.ocr.recognize(crop):
-            txt = r.text
-            if not txt:
-                continue
-            # Hitting any "playing"-class keyword marks the playback state.
-            if any(w and w in txt for w in playing_words):
-                return True
-        return False
+        return self._talk_detector.detect_active(frame, self._scale()) is not TalkEvidence.NONE
 
     # ------------------------------------------------------------- hangout
 
@@ -127,67 +121,139 @@ class AutoSkipTask:
 
     # ------------------------------------------------------------- options
 
-    def _option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
-        """Option search region covering most of the lower-middle of the screen.
+    def _standard_option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
+        """Return BetterGI's standard right-side dialogue-option ROI."""
+
+        height, width = frame.shape[:2]
+        return (
+            width // 2,
+            height // 12,
+            width - width // 2 - width // 6,
+            height - height // 12 - 10,
+        )
+
+    def _extended_option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
+        """Return the Android-specific ROI for gear and investigation-list options.
 
         The region spans the full width (left case-book / investigation panel + right dialogue bubbles).
-        An earlier version only scanned the right half and missed left-side multi-option list UIs such as
-        the Fontaine case-book; the full-width lower-middle region supports both layouts.
+        It is never used as an unconditional click source outside an active Talk state.
         """
-        h, w = frame.shape[:2]
-        # Margins on every side avoid UI decorations (left/right) and the top title bar / bottom buttons.
-        return (int(w * 0.08), int(h * 0.12), int(w * 0.84), int(h * 0.82))
+        height, width = frame.shape[:2]
+        return (int(width * 0.08), int(height * 0.12), int(width * 0.84), int(height * 0.82))
 
-    def _handle_options(self, frame: np.ndarray) -> bool:
-        if not self.config.choose_option or self.config.option_mode == "none":
-            return False
+    def _option_roi(self, frame: np.ndarray) -> tuple[int, int, int, int]:
+        """Backward-compatible alias for tools that inspect the extended option ROI."""
 
-        roi = self._option_roi(frame)
+        return self._extended_option_roi(frame)
+
+    @staticmethod
+    def _pick_position(items: list, mode: str) -> int:
+        if mode == "last":
+            return len(items) - 1
+        if mode == "random":
+            return random.randrange(len(items))
+        if mode == "second":
+            return 1 if len(items) > 1 else 0
+        return 0
+
+    def _has_explicit_extended_options(self, frame: np.ndarray) -> bool:
+        roi = self._extended_option_roi(frame)
+        return any(
+            self._find(frame, name, roi=roi) is not None
+            for name in ("icon_gear_option.png", "icon_gear_option_ctx.png")
+        )
+
+    def _handle_options(
+        self,
+        frame: np.ndarray,
+        *,
+        allow_pixel_fallback: bool = True,
+    ) -> OptionOutcome:
+        auto_choose = self.config.choose_option and self.config.option_mode != "none"
+        standard_roi = self._standard_option_roi(frame)
 
         # Exclamation mark = a mission-critical option; always take it first.
-        excl = self._find(frame, "icon_exclamation.png", roi=roi)
+        excl = self._find(frame, "icon_exclamation.png", roi=standard_roi)
         if excl:
+            if not auto_choose:
+                return OptionOutcome.PAUSED
             log.info("exclamation option found -> tap")
             self._tap_match(excl, offset_x=int(120 * self._scale()))
             self._last_option_click = time.time()
-            return True
+            return OptionOutcome.HANDLED
 
-        # --- OCR-first strategy ---
-        # Always OCR the option ROI and cluster results by y to extract candidate options.
-        # Icon template matching is now only an auxiliary signal (logging / confidence weighting),
-        # not a hard gate.
-        texts = self._read_options(frame, roi)
-
-        # Use the icon match count to gauge whether we are really on an option screen
-        # (>=1 icon hit makes it more trustworthy).
+        # Standard options are gated by the bubble icon before OCR, matching BetterGI's safe range.
         bubbles = match_template_multi(
-            frame, "icon_option.png", self._scale(), self.config.template_threshold, roi
+            frame,
+            "icon_option.png",
+            self._scale(),
+            self.config.template_threshold,
+            standard_roi,
         )
-        icon_count = len(bubbles)
-        if icon_count > 0:
-            log.debug("option-icon match count: %d", icon_count)
+        texts: list[Match] = []
+        if bubbles:
+            lowest = max(bubbles, key=lambda match: match.y)
+            scale = self._scale()
+            text_x = lowest.right + int(round(8 * scale))
+            text_y = frame.shape[0] // 12
+            text_width = int(round(535 * scale))
+            text_height = lowest.bottom + int(round(30 * scale)) - text_y
+            texts = self._read_options(
+                frame,
+                (text_x, text_y, text_width, max(0, text_height)),
+            )
+
+        # Android-specific gear/case-book layouts are allowed only with explicit template evidence.
+        extended = self._has_explicit_extended_options(frame)
+        if not texts and extended:
+            texts = self._read_options(frame, self._extended_option_roi(frame))
 
         if not texts:
             # No OCR text but icons present -> fall back to tapping by icon position.
-            if icon_count > 0:
+            if bubbles:
+                if not auto_choose:
+                    return OptionOutcome.PAUSED
                 bubbles.sort(key=lambda m: m.y)
-                target = bubbles[0] if self.config.option_mode != "last" else bubbles[-1]
-                log.info("option text unreadable (%d icons) -> tap item #%d by position", icon_count, bubbles.index(target) + 1)
+                index = self._pick_position(bubbles, self.config.option_mode)
+                target = bubbles[index]
+                log.info(
+                    "option text unreadable (%d icons) -> tap item #%d by position",
+                    len(bubbles),
+                    index + 1,
+                )
                 self._tap_match(target, offset_x=int(80 * self._scale()))
                 self._last_option_click = time.time()
-                return True
+                return OptionOutcome.HANDLED
 
-            # --- Fallback: special option UIs (gear / case-book) without a standard icon ---
-            # When OCR is unavailable and no icon matches, try clicking a dark rounded bubble in the
-            # lower-middle area (the typical option-background feature) to advance.
-            if self._guess_option_bubble(frame):
-                return True
+            if extended:
+                return OptionOutcome.PAUSED
 
-            return False
+            if allow_pixel_fallback:
+                bands = self._find_option_bands(frame)
+                if bands:
+                    if not auto_choose:
+                        return OptionOutcome.PAUSED
+                    index = self._pick_position(bands, self.config.option_mode)
+                    abs_y, abs_x, band_h = bands[index]
+                    log.info(
+                        "pure-pixel detected %d option band(s); tap item #%d @y=%d, height=%dpx",
+                        len(bands),
+                        index + 1,
+                        abs_y,
+                        band_h,
+                    )
+                    self._tap_in_window(abs_x, abs_y)
+                    self._last_option_click = time.time()
+                    return OptionOutcome.HANDLED
+
+            return OptionOutcome.NO_OPTION
+
+        if not auto_choose:
+            return OptionOutcome.PAUSED
 
         choice = self._decide_option(texts)
         if choice is None:
-            return False
+            return OptionOutcome.PAUSED
 
         if self.config.before_choose_delay > 0:
             time.sleep(self.config.before_choose_delay)
@@ -196,7 +262,7 @@ class AutoSkipTask:
         log.info("selected option [%d]: %s", idx + 1, m.text or "(no text)")
         self._tap_in_window(m.center[0], m.center[1])
         self._last_option_click = time.time()
-        return True
+        return OptionOutcome.HANDLED
 
     def _read_options(self, frame: np.ndarray, roi: tuple[int, int, int, int]) -> list[Match]:
         """Run OCR on the whole option ROI, cluster into multiple options by y, and return text-bearing clickable regions.
@@ -225,7 +291,7 @@ Filtering strategy:
 
         items.sort(key=lambda t: t[1])
         groups: list[list] = []
-        line_gap = int(40 * self._scale())
+        line_gap = max(1, int(round(40 * self._scale())))
         for cx, cy, text, score, rx, ry, rw, rh in items:
             if groups and cy - groups[-1][-1][1] <= line_gap:
                 groups[-1].append((cx, cy, text, score, rx, ry, rw, rh))
@@ -258,8 +324,9 @@ Filtering strategy:
                 and gx < npc_x_threshold    # left-aligned (NPC names/dialogue start at the left)
                 and len(texts_) > 8         # longer text (dialogue is longer than option text)
             )
-            # Single characters / very short text are usually not valid options (debris or a 1-char NPC name)
-            is_trivial = len(texts_) <= 2
+            compact = "".join(texts_.split())
+            # BetterGI filters only short ASCII alphanumeric debris; short CJK options are valid.
+            is_trivial = len(compact) < 5 and compact.isascii() and compact.isalnum()
             if is_npc_like or is_trivial:
                 log.debug("filtered non-option text: %r (y=%.0f, x=%.0f, len=%d, npc=%s trivial=%s)",
                           texts_, abs_gy, gx, len(texts_), is_npc_like, is_trivial)
@@ -271,7 +338,7 @@ Filtering strategy:
             cy_int = int(sum(ys) / len(ys))
             # Detect the orange tint on the option's source pixels (key-story options are tinted orange-yellow).
             sub = frame[max(0, y - 8): y + 40, max(0, x - 8): x + 400]
-            orange = is_orange_option(sub)
+            orange = is_orange_option(sub, self.config.orange_ratio)
             out.append(
                 Match(
                     x=x, y=y,
@@ -288,26 +355,27 @@ Filtering strategy:
         # 1. Custom priority words (user-defined).
         for i, o in enumerate(options):
             for kw in self.config.custom_priority:
-                if kw and kw in o.text:
+                if kw and kw.casefold() in o.text.casefold():
                     log.debug("matched custom priority word '%s'", kw)
                     return i, o
 
-        # 2. Built-in priority words.
-        for i, o in enumerate(options):
-            for kw in self.config.select_keywords:
-                if kw and kw in o.text:
-                    log.debug("matched built-in priority word '%s'", kw)
-                    return i, o
-
-        # 3. Sensitive words -> pause and hand control to the user.
+        # 2. Sensitive words always win over built-in selection words. Custom priority above is
+        # the only intentional override for an option the user has explicitly chosen to trust.
         for o in options:
             for kw in self.config.pause_keywords:
-                if kw and kw in o.text:
+                if kw and kw.casefold() in o.text.casefold():
                     if self._paused_reason != kw:
                         log.warning("option contains sensitive word '%s' (%s); pausing auto-tap, handle manually", kw, o.text)
                         self._paused_reason = kw
                     return None
         self._paused_reason = None
+
+        # 3. Built-in priority words.
+        for i, o in enumerate(options):
+            for kw in self.config.select_keywords:
+                if kw and kw.casefold() in o.text.casefold():
+                    log.debug("matched built-in priority word '%s'", kw)
+                    return i, o
 
         # 4. Orange key-story options.
         if self.config.prefer_orange:
@@ -317,21 +385,8 @@ Filtering strategy:
                     return i, o
 
         # 5. Fallback strategy.
-        mode = self.config.option_mode
-        if mode == "none":
-            log.info("option mode=none; skip auto-selection, leave to manual control")
-            return None
-        if mode == "last":
-            return len(options) - 1, options[-1]
-        if mode == "random":
-            i = random.randrange(len(options))
-            return i, options[i]
-        if mode == "second":
-            # The 2nd option; fall back to the 1st when fewer than 2 exist, so we always click something.
-            i = 1 if len(options) > 1 else 0
-            return i, options[i]
-        # first (default)
-        return 0, options[0]
+        index = self._pick_position(options, self.config.option_mode)
+        return index, options[index]
 
     # ------------------------------------------------------------- advance / black-screen / popup
 
@@ -349,7 +404,7 @@ Filtering strategy:
         ratio = black_ratio(frame)
         if not (self.config.black_ratio_min <= ratio <= self.config.black_ratio_max):
             return False
-        now = time.time()
+        now = time.monotonic()
         if now - self._last_black_click < 1.0:
             return False
         self._last_black_click = now
@@ -362,6 +417,20 @@ Filtering strategy:
         if not self.config.close_popup:
             return False
         h, w = frame.shape[:2]
+        scale = self._scale()
+        # BetterGI never closes a page while the big map is visible.
+        map_scale = self._find(
+            frame,
+            "quick_teleport/MapScaleButton.png",
+            roi=(int(30 * scale), int(440 * scale), int(40 * scale), int(200 * scale)),
+        )
+        map_settings = self._find(
+            frame,
+            "quick_teleport/MapSettingsButton.png",
+            roi=(int(25 * scale), max(0, h - int(90 * scale)), int(58 * scale), int(62 * scale)),
+        )
+        if map_scale or map_settings:
+            return False
         close = self._find(frame, "page_close.png", roi=(w - w // 8, 0, w // 8, h // 8))
         if close:
             log.info("pop-up page detected -> close")
@@ -432,10 +501,13 @@ An empty list means no recognizable option dark band on the current screen.
                 elif i + 1 < len(row_means) and row_means[i + 1] > row_means[i - 1]:
                     edges.append((i, "bottom"))
 
-        # Match each top edge with the next bottom edge, keeping dark bands 35~120px tall.
+        # Match each top edge with the next bottom edge, keeping scaled 35~120px bands.
         # (upper cap 120 covers larger case-book list rows / section titles; lower cap 35 drops the
         # short bars of option-panel headers / dividers.)
         bands: list[tuple[int, int, int]] = []
+        scale = self._scale()
+        min_band_height = max(1, int(round(35 * scale)))
+        max_band_height = max(min_band_height, int(round(120 * scale)))
         for idx in range(len(edges)):
             ey, etype = edges[idx]
             if etype != "top":
@@ -444,7 +516,7 @@ An empty list means no recognizable option dark band on the current screen.
                 jy, jtype = edges[jdx]
                 if jtype == "bottom":
                     band_h = jy - ey
-                    if 35 <= band_h <= 120:
+                    if min_band_height <= band_h <= max_band_height:
                         band_brightness = row_means[ey:jy].mean()
                         before_brightness = (
                             row_means[max(0, ey - 10):ey].mean()
@@ -478,11 +550,12 @@ An empty list means no recognizable option dark band on the current screen.
                             bands.append((abs_y, abs_x, band_h))
                     break
 
-        # Sort by y and de-duplicate (bands < 15px apart are the same band).
+        # Sort by y and de-duplicate using a resolution-scaled center distance.
         bands.sort(key=lambda b: b[0])
         dedup: list[tuple[int, int, int]] = []
+        dedup_distance = max(1, int(round(15 * scale)))
         for b in bands:
-            if dedup and b[0] - dedup[-1][0] < 15:
+            if dedup and b[0] - dedup[-1][0] < dedup_distance:
                 continue
             dedup.append(b)
         return dedup
@@ -526,9 +599,12 @@ dialogue-option screen.
         # The indicator is usually white / light gray, far brighter than the dark background.
         _, binarized = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(binarized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        area_scale = self._scale() ** 2
+        min_area = 80 * area_scale
+        max_area = 6000 * area_scale
         for c in contours:
             area = cv2.contourArea(c)
-            if area < 80 or area > 6000:
+            if area < min_area or area > max_area:
                 continue
             x, y, cw, ch = cv2.boundingRect(c)
             # The indicator is small and near square/triangle, so its aspect ratio is not extreme.
@@ -569,11 +645,13 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
         if crop.size:
             cont_words = self._kw.get("continue_", [])
             for r in self.ocr.recognize(crop, upscale=3):
-                txt = r.text
+                if r.score < 0.75:
+                    continue
+                txt = r.text.casefold()
                 if not txt:
                     continue
                 # Hitting any "continue / tap anywhere" class word counts as the prompt.
-                if any(w and w in txt for w in cont_words):
+                if any(word and word.casefold() in txt for word in cont_words):
                     return True
 
         # --- 3) Pure-pixel fallback: bottom-center arrow / inverted-triangle indicator ---
@@ -613,36 +691,47 @@ the "no option dark band" joint check avoids false triggers on normal dialogue/o
         if self.config.debug and self._frame_index % 20 == 0:
             self._dump_debug(frame, "frame")
 
-        now = time.time()
-        playing = self._is_playing(frame)
-        if playing:
-            self._last_playing_at = now
-        in_grace = (now - self._last_playing_at) <= PLAYING_FLAG_GRACE
+        talk = self._talk_detector.observe(frame, self._scale())
+        if talk.evidence is not self._last_talk_evidence:
+            log.debug(
+                "talk state changed: active=%s grace=%s evidence=%s",
+                talk.active,
+                talk.in_grace,
+                talk.evidence.value,
+            )
+            self._last_talk_evidence = talk.evidence
 
-        # Hangout skip (independent of playing state)
-        if self._handle_hangout(frame):
+        # Upstream checks hangout actions only while Talk is active.
+        if talk.active and self._handle_hangout(frame):
             return
 
-        # Options take priority over advancing, to avoid mis-tapping away an option
-        if self._handle_options(frame):
+        # Android keeps option recognition ahead of quick advance because tapping is direct input.
+        explicit_extended = False if talk.active else self._has_explicit_extended_options(frame)
+        if talk.active or explicit_extended:
+            outcome = self._handle_options(
+                frame,
+                allow_pixel_fallback=talk.active,
+            )
+            if outcome is not OptionOutcome.NO_OPTION:
+                return
+
+        if talk.active:
+            if self._handle_playing(frame):
+                self._last_frame = frame
             return
 
-        if playing and self._handle_playing(frame):
-            self._last_frame = frame
-            return
+        if talk.in_grace:
+            if self._handle_popup(frame):
+                return
+            # OCR and pure-pixel continue fallbacks are grace-gated to avoid idle-screen taps.
+            if self._handle_click_continue(frame):
+                return
 
         if self._handle_black_screen(frame):
             return
 
-        if in_grace and self._handle_popup(frame):
-            return
-
-        # "Tap anywhere to continue" (e.g. Fontaine main story) -- lower priority than options / popups.
-        if self._handle_click_continue(frame):
-            return
-
         # The screen is idle and not playing -> the story has ended; just stand by silently.
-        if not in_grace:
+        if not talk.in_grace:
             diff = frame_diff_ratio(self._last_frame, frame)
             if diff < 0.01:
                 log.debug("screen idle and not playing; standing by")

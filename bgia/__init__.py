@@ -3,4 +3,4 @@
 Ported from the AutoSkip feature of BetterGI (https://github.com/babalae/better-genshin-impact).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
